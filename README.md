@@ -1,44 +1,44 @@
-# Seafile Pro — POP Creations
+# seafile — POP Creations
 
-Infrastructure repo for the Seafile Pro deployment serving POP Creations designers.
+Infrastructure for the Seafile Pro file sync deployment serving POP Creations designers.
 
-## What This Is
-
-8 designers in São Paulo access a 28TB file library that lives on Synology NAS devices in a NYC office. This repo contains everything needed to deploy and maintain both sides of the system.
+8 designers in São Paulo access a 28TB file library that lives on Synology NAS devices in a NYC office. This repo contains everything to operate both sides of the system.
 
 ## Structure
 
 ```
-seafile-server/          ← Linode VPS deployment (live at seafile.designflow.app)
-├── seafile-server.yml   ← Docker Compose: Seafile, MariaDB, Redis
-├── caddy.yml            ← Docker Compose: Caddy reverse proxy + TLS
-├── .env.example         ← Environment variable template (copy to .env, fill secrets)
-├── START_SEAFILE.sh     ← Pre-flight startup script
-├── CONFIGURE_OAUTH.sh   ← Google OAuth SSO setup
-├── CREATE_NAS_SYNC_ACCOUNT.sh
+seafile-server/               Linode VPS — live at seafile.designflow.app
+├── seafile-server.yml        Docker Compose: Seafile, MariaDB, Redis
+├── caddy.yml                 Docker Compose: Caddy reverse proxy + TLS
+├── .env.example              Environment variable template (never commit .env)
+├── START_SEAFILE.sh          Pre-flight startup script
+├── CONFIGURE_OAUTH.sh        Google OAuth SSO setup (already run — idempotent)
+├── CREATE_NAS_SYNC_ACCOUNT.sh  NAS machine account + library creation
 └── docs/
-    ├── README.md        ← Status and quick reference
-    ├── ARCHITECTURE.md  ← System design, containers, data flow
-    ├── OPERATIONS.md    ← Start/stop, logs, backup, updates
-    ├── CONFIGURATION.md ← All config files explained
-    ├── PENDING.md       ← Remaining work + step-by-step instructions
-    └── CONTEXT_FOR_AI.md ← Key facts for AI sessions working on this system
+    ├── README.md             Server status and quick reference
+    ├── architecture.md       System design, containers, data flow, storage
+    ├── configuration.md      All env vars, config files, and their meanings
+    ├── deployment.md         Start/stop, updates, backup, DNS, remaining work
+    ├── development.md        Logs, debugging, API usage, user management
+    └── CONTEXT_FOR_AI.md     Key facts for AI sessions picking up this project
 
-synology-seaf-cli/       ← NYC Synology NAS sync containers (not yet deployed)
-├── docker-compose.yml   ← One seaf-cli container per library
-├── .env.example         ← NAS sync password template
-└── README.md            ← Synology setup instructions
+synology-seaf-cli/            NYC Synology NAS — NOT YET DEPLOYED
+├── docker-compose.yml        One seaf-cli container per library, UUIDs pre-filled
+├── .env.example              NAS sync password template
+└── README.md                 Synology setup instructions
 ```
 
-## Quick Reference
+## Live System
 
-| Item | Value |
-|------|-------|
-| Live URL | https://seafile.designflow.app |
-| Server | Linode VPS — 172.233.14.233 |
-| Admin | u2giants@gmail.com (Google SSO) or albert@popcre.com (local) |
+| | |
+|---|---|
+| URL | https://seafile.designflow.app |
+| Server | Linode VPS · 172.233.14.233 · Ubuntu 24.04 |
+| Admin (SSO) | u2giants@gmail.com via Google |
+| Admin (local) | albert@popcre.com |
 | Credentials | `/opt/seafile/CREDENTIALS.txt` on the VPS (root-only, never in this repo) |
+| GitHub | https://github.com/u2giants/seafile |
 
 ## AI Sessions
 
-Start with `seafile-server/docs/CONTEXT_FOR_AI.md` — written specifically for AI assistants picking up this project.
+Start with [`seafile-server/docs/CONTEXT_FOR_AI.md`](seafile-server/docs/CONTEXT_FOR_AI.md).

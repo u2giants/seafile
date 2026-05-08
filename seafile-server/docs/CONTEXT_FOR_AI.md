@@ -1,55 +1,51 @@
 # Context for AI Sessions
 
-This file is written specifically for a future AI assistant working on this system. Read this before doing anything else.
-
----
+Read this before doing anything else on this system.
 
 ## Who You're Working For
 
-**Albert** (u2giants@gmail.com) is the operator. He runs POP Creations, a design agency. He is comfortable with technical work but delegates infrastructure management to AI sessions via Claude Code running on this VPS.
-
----
+**Albert** (u2giants@gmail.com / albert@popcre.com) runs POP Creations, a design agency. He delegates infrastructure work to AI sessions via Claude Code running on this VPS as the `ai` user with passwordless sudo.
 
 ## What This System Is
 
-A Seafile Pro 13.0 file sync server for POP Creations, hosted on a Linode VPS at `172.233.14.233`. It serves 8 graphic designers in São Paulo, Brazil who work with a 28TB file library that lives on Synology NAS devices in a New York City office.
+Seafile Pro 13.0 on a Linode VPS. 8 graphic designers in São Paulo access a 28TB file library that lives on Synology NAS devices in a NYC office. The VPS is a relay: NAS pushes files here via seaf-cli; designers pull via HTTPS.
 
-**The core architecture:** NAS (NYC) → Seafile server (this VPS) ← Designers (São Paulo)
+**File data goes to S3, not the VPS disk.** The VPS disk holds only the database, config, and application state.
 
-The VPS is a relay, not the source of truth. The NAS holds the real files; Seafile is the access layer.
+## Access
 
----
+```
+User:     ai (passwordless sudo)
+VPS:      172.233.14.233
+App dir:  /opt/seafile/
+Creds:    /opt/seafile/CREDENTIALS.txt (root-only, chmod 600)
+```
 
-## Key Facts You Need
+**Read credentials from the file — never hardcode or regenerate them.**
 
-### Access
-- You are running as `ai` user with passwordless sudo
-- Working directory for Seafile: `/opt/seafile/`
-- All scripts and configs are in `/opt/seafile/`
-- Credentials (passwords, UUIDs, keys): `/opt/seafile/CREDENTIALS.txt` (root-only)
+## Current State
 
-### Credentials (do not store elsewhere, read from file)
-Read credentials from `/opt/seafile/CREDENTIALS.txt`. Do not hardcode them anywhere.
+| Component | Status |
+|-----------|--------|
+| Seafile Pro 13.0 | Running and healthy |
+| Google OAuth SSO | Live — u2giants@gmail.com and albert@popcre.com are admins |
+| S3 storage | Configured — Linode br-gru-1, 3 buckets |
+| NAS sync account | nas-sync@popcre.com (machine account) |
+| Libraries | Active Projects, Assets, Seasonal — UUIDs in CREDENTIALS.txt |
+| Synology seaf-cli | **Not yet deployed** |
+| Designer accounts | **Not yet created** |
+| Elasticsearch | **Not deployed** (intentional — RAM) |
 
-### The application is live
-- https://seafile.designflow.app is running and accessible
-- Do not stop containers without telling Albert first
-- Changes to seahub_settings.py require `docker restart seafile`
-- Changes to `.env` require `docker compose -f /opt/seafile/seafile-server.yml -f /opt/seafile/caddy.yml up -d`
+## Key Commands
 
-### DNS
-- `seafile.designflow.app` A record → `172.233.14.233`
-- **DNS-only, NOT proxied through Cloudflare** — this is intentional, do not change it
-- Cloudflare zone ID: `921eb133a3f7d5802780445b283f84ce`
-- Cloudflare account ID: `8303d11002766bf1cc36bf2f07ba6f20`
-- Cloudflare MCP is available in Claude Code but has NO DNS tools — use the Cloudflare API via curl with a bearer token if Albert provides one
-
-### Docker
 ```bash
-# Check status
+# Container status
 docker compose -f /opt/seafile/seafile-server.yml -f /opt/seafile/caddy.yml ps
 
-# Restart all
+# Restart Seafile app (after seahub_settings.py edit)
+docker restart seafile
+
+# Restart all (after .env change)
 cd /opt/seafile && docker compose -f seafile-server.yml -f caddy.yml restart
 
 # Logs
@@ -57,82 +53,40 @@ docker logs seafile
 docker logs seafile-caddy
 ```
 
-### The four containers
-| Container | Image | Role |
-|-----------|-------|------|
-| `seafile` | `seafileltd/seafile-pro-mc:13.0-latest` | Main app |
-| `seafile-caddy` | `lucaslorentz/caddy-docker-proxy:2.12-alpine` | TLS + reverse proxy |
-| `seafile-mysql` | `mariadb:10.11` | Database |
-| `seafile-redis` | `redis:latest` | Cache |
+## Non-Obvious Facts
 
----
+**Image name:** `seafileltd/seafile-pro-mc:13.0-latest` is on Docker Hub. `docker.seadrive.org` does not have a `13.0-latest` tag — only `latest` (different, newer build). The `.env` and compose file use the Docker Hub image.
 
-## Things That Are Not Obvious
+**Cloudflare proxy is off intentionally.** `seafile.designflow.app` is DNS-only. Do not enable the orange cloud — it breaks Seafile's sync protocol.
 
-### Image name correction
-The Seafile manual and original deployment doc reference `docker.seadrive.org/seafileltd/seafile-pro-mc:13.0-latest`. This tag **does not exist** on the Seafile private registry. The correct image for Seafile Pro 13.0 is `seafileltd/seafile-pro-mc:13.0-latest` from **Docker Hub**. The `latest` tag does exist on docker.seadrive.org.
+**Seafile user emails are internal UUIDs.** The API stores accounts as `<hash>@auth.local` internally. The human email is `contact_email`. When calling admin APIs to modify a user, use the internal email. Get it from `GET /api/v2.1/admin/users/`.
 
-### No Elasticsearch
-`seafevents.conf` has `[INDEX FILES]` enabled pointing to `es_host = elasticsearch`, but there is no Elasticsearch container. Full-text search inside files does not work. Filename search works. This is intentional for now (Elasticsearch needs ~2GB RAM on a 4GB server). See PENDING.md to add it.
+**seahub_settings.py lives in the Docker volume** at `/opt/seafile-data/seafile/conf/seahub_settings.py`. Persists across restarts. After editing: `docker restart seafile`. Before editing: make a backup.
 
-### S3 storage not configured
-File data is currently on local disk at `/opt/seafile-data/seafile/seafile-data/`. The 80GB VPS disk will not hold 28TB. S3 configuration is pending — see PENDING.md. Do NOT let the NAS start a full sync before this is resolved.
+**CONFIGURE_OAUTH.sh is NOT idempotent.** Running it twice duplicates the OAuth block in seahub_settings.py, which causes a Django error. Check the file first.
 
-### Cloudflare proxy MUST stay off
-`seafile.designflow.app` is DNS-only. If it were proxied, Seafile's sync protocol (non-HTTP binary protocol on port 8082) would break. Never enable the orange cloud for this record.
+**CREATE_NAS_SYNC_ACCOUNT.sh is for fresh installs only.** The NAS sync account and libraries already exist. Running this script again would create duplicates.
 
-### seahub_settings.py is inside the volume
-`/opt/seafile-data/seafile/conf/seahub_settings.py` is inside the Docker volume. It persists across container restarts but is regenerated on fresh container creation if the volume doesn't exist. Always back it up before editing.
+**seafevents.conf references Elasticsearch** (`es_host = elasticsearch`) which doesn't exist. This logs connection errors every 10 minutes — expected, harmless. See architecture.md.
 
-### Google OAuth is not yet configured
-The login page currently shows email/password only. No "Sign in with Google" button exists yet. See PENDING.md item 1 for setup instructions.
+**S3 requires 3 distinct buckets.** Seafile refuses to start if any two of `S3_BLOCK_BUCKET`, `S3_COMMIT_BUCKET`, `S3_FS_BUCKET` share a name.
 
-### WebDAV is disabled
-`seafdav.conf` has `enabled = false`. Can be enabled without opening new ports (Caddy handles it on 443).
+**Seafile's init vars are init-only.** `INIT_SEAFILE_ADMIN_EMAIL`, `INIT_SEAFILE_ADMIN_PASSWORD`, and `INIT_SEAFILE_MYSQL_ROOT_PASSWORD` in `.env` are only applied on first startup. Changing them later has no effect.
 
----
+## Scripts in /opt/seafile/
 
-## Helper Scripts
+| Script | Purpose | Run again? |
+|--------|---------|-----------|
+| `START_SEAFILE.sh` | Pre-flight checks + start | Yes — after any reboot or stop |
+| `CONFIGURE_OAUTH.sh CLIENT_ID SECRET` | Append OAuth block to seahub_settings.py + restart | No — already done; check file first |
+| `CREATE_NAS_SYNC_ACCOUNT.sh` | Create nas-sync@popcre.com + libraries | No — already done |
 
-All scripts are in `/opt/seafile/` and should be run as root.
+## GitHub Repo
 
-| Script | Purpose | When to use |
-|--------|---------|------------|
-| `START_SEAFILE.sh` | Pre-flight check + start containers | After a server reboot or new deployment |
-| `CONFIGURE_OAUTH.sh CLIENT_ID SECRET` | Add Google OAuth to seahub_settings.py + restart | When Albert provides Google OAuth credentials |
-| `CREATE_NAS_SYNC_ACCOUNT.sh` | Create nas-sync@popcreations.com + 3 libraries | One-time setup before NAS sync begins |
+https://github.com/u2giants/seafile — contains compose files, scripts, and this documentation. Secrets (`.env`, `CREDENTIALS.txt`) are gitignored and never committed.
 
----
-
-## What Still Needs To Be Done
-
-See `PENDING.md` for full details. Summary:
-1. **Google OAuth SSO** — Albert needs to create a Google Cloud OAuth app
-2. **NAS sync account** — run `CREATE_NAS_SYNC_ACCOUNT.sh`
-3. **Libraries** — created by the above script (Active Projects, Assets, Seasonal)
-4. **Designer accounts** — 8 users to be added
-5. **Synology NAS configuration** — seaf-cli Docker setup on the NYC NAS
-6. **S3 storage** — IMPORTANT: must be configured before large-scale sync begins
-
----
-
-## Files in This Repository
-
-```
-/opt/seafile/
-├── .env                         ← All secrets and runtime config
-├── seafile-server.yml           ← Docker compose: db, redis, seafile
-├── caddy.yml                    ← Docker compose: Caddy TLS proxy
-├── CREDENTIALS.txt              ← All passwords and UUIDs (root-only)
-├── START_SEAFILE.sh             ← Startup script with pre-flight checks
-├── CONFIGURE_OAUTH.sh           ← Google OAuth setup helper
-├── CREATE_NAS_SYNC_ACCOUNT.sh   ← NAS service account + library creation
-├── oauth_settings_template.py   ← Reference copy of the OAuth config block
-└── docs/
-    ├── README.md                ← Overview and current status
-    ├── ARCHITECTURE.md          ← System design and container layout
-    ├── OPERATIONS.md            ← How to operate the system day-to-day
-    ├── CONFIGURATION.md         ← All config files explained
-    ├── PENDING.md               ← Remaining work with step-by-step instructions
-    └── CONTEXT_FOR_AI.md        ← This file
+To push doc updates:
+```bash
+cd ~/seafile-repo
+git add -A && git commit -m "message" && git push
 ```
