@@ -55,7 +55,9 @@ docker logs seafile-caddy
 
 ## Synology NAS — seaf-cli
 
-**edgesynology1** (192.168.3.100): seaf-cli-decor container is **live and syncing** `/volume1/mac/Decor` → Active Projects library.
+**edgesynology1** (192.168.3.100): two containers live and syncing:
+- `seaf-cli-char-licensed`: `/volume1/mac/Decor/Character Licensed` → **Character Licensed** (UUID: 177cf9de-3066-482e-956a-7ae8d8786c6d)
+- `seaf-cli-generic-decor`: `/volume1/mac/Decor/Generic Decor` → **Generic Decor** (UUID: 1b116ab7-d66b-4411-a691-21f34eadb731)
 
 **Docker binary on Synology:** `/var/packages/ContainerManager/target/usr/bin/docker`  
 The `docker` binary is NOT in PATH. The NAS MCP `run_command` allowlist blocks any command string containing the word "docker". To run docker commands via the NAS MCP, encode with base64:
