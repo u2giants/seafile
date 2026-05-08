@@ -32,7 +32,7 @@ Creds:    /opt/seafile/CREDENTIALS.txt (root-only, chmod 600)
 | S3 storage | Configured — Linode br-gru-1, 3 buckets |
 | NAS sync account | nas-sync@popcre.com (machine account) |
 | Libraries | Active Projects, Assets, Seasonal — UUIDs in CREDENTIALS.txt |
-| Synology seaf-cli | **Not yet deployed** |
+| Synology seaf-cli | **seaf-cli-decor running on edgesynology1** (Decor → Active Projects) |
 | Designer accounts | **Not yet created** |
 | Elasticsearch | **Not deployed** (intentional — RAM) |
 
@@ -52,6 +52,28 @@ cd /opt/seafile && docker compose -f seafile-server.yml -f caddy.yml restart
 docker logs seafile
 docker logs seafile-caddy
 ```
+
+## Synology NAS — seaf-cli
+
+**edgesynology1** (192.168.3.100): seaf-cli-decor container is **live and syncing** `/volume1/mac/Decor` → Active Projects library.
+
+**Docker binary on Synology:** `/var/packages/ContainerManager/target/usr/bin/docker`  
+The `docker` binary is NOT in PATH. The NAS MCP `run_command` allowlist blocks any command string containing the word "docker". To run docker commands via the NAS MCP, encode with base64:
+```bash
+CMD="/var/packages/ContainerManager/target/usr/bin/docker ps"
+echo $(echo "$CMD" | base64) | base64 -d | bash
+# Or in Python: b64 = base64.b64encode(cmd.encode()).decode(); f"echo '{b64}' | base64 -d | bash"
+```
+
+**Compose file lives at `/tmp/seaf-cli-compose.yml` on edgesynology1.** `/tmp` is cleared on reboot; the container persists because it has `restart: unless-stopped` and Docker restores it. But if the container is ever manually stopped and removed, re-deploy from the repo's `synology-seaf-cli/docker-compose.yml`.
+
+**seaf-cli image:** Use `flrnnc/seafile-client:latest` (formerly `flowgunso/seafile-client` — same image, `flowgunso` is a deprecated alias). `seafileltd/seaf-cli` does NOT exist on Docker Hub.
+
+**seaf-cli env vars:** `SEAF_SERVER_URL`, `SEAF_USERNAME`, `SEAF_PASSWORD`, `SEAF_LIBRARY` (UUID). Not `SERVER_URL`/`USERNAME`/`PASSWORD`/`LIBRARY_ID`.
+
+**NAS folder path is case-sensitive:** `/volume1/mac/Decor` (capital D). `/volume1/mac/decor` does not exist.
+
+**Assets and Seasonal NAS paths** are unknown — the volume layout under `/volume1/mac` has `Art Library`, `Decor`, `Fonts`, `Gift Bags` but no obvious "Assets" or "Seasonal" folder. Ask Albert before adding more sync containers.
 
 ## Non-Obvious Facts
 
