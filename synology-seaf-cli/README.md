@@ -47,5 +47,6 @@ echo $(echo "$CMD" | base64) | base64 -d | bash
 ## Notes
 
 - Initial sync is ongoing — leave containers running uninterrupted
-- seaf-cli state (sync metadata) is in named Docker volumes (`seaf-cli-char-licensed-data`, `seaf-cli-generic-decor-data`) — deleting these forces a full re-sync from scratch
+- seaf-cli state (sync metadata) is in named Docker volumes (`seaf-cli-char-licensed-data`, `seaf-cli-generic-decor-data`) mounted at `/seafile` — deleting these forces a full re-sync from scratch
+- NAS folders are mounted to `/library` (the image's sync destination). Do NOT mount to `/data/sync` — seaf-cli ignores that path.
 - Docker binary on Synology: `/var/packages/ContainerManager/target/usr/bin/docker` (not in PATH)

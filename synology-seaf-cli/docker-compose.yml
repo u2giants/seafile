@@ -18,8 +18,8 @@ services:
     container_name: seaf-cli-char-licensed
     restart: unless-stopped
     volumes:
-      - /volume1/mac/Decor/Character Licensed:/data/sync
-      - seaf-cli-char-licensed-data:/root/.seafile-client
+      - /volume1/mac/Decor/Character Licensed:/library
+      - seaf-cli-char-licensed-data:/seafile
     environment:
       - SEAF_SERVER_URL=https://seafile.designflow.app
       - SEAF_USERNAME=nas-sync@popcre.com
@@ -31,8 +31,8 @@ services:
     container_name: seaf-cli-generic-decor
     restart: unless-stopped
     volumes:
-      - /volume1/mac/Decor/Generic Decor:/data/sync
-      - seaf-cli-generic-decor-data:/root/.seafile-client
+      - /volume1/mac/Decor/Generic Decor:/library
+      - seaf-cli-generic-decor-data:/seafile
     environment:
       - SEAF_SERVER_URL=https://seafile.designflow.app
       - SEAF_USERNAME=nas-sync@popcre.com

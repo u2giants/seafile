@@ -210,6 +210,12 @@ No large third-party packages are included in this repo. Nothing to ignore for A
 **Why:** Seafile does not publish an official seaf-cli Docker image.
 **Do not change because:** This is the only working image. `flowgunso` is a deprecated alias for `flrnnc` — always use `flrnnc`.
 
+### seaf-cli NAS path mounts to /library, not /data/sync
+**Looks like:** The volume mount destination should be wherever you want to sync.
+**Actually:** The `flrnnc/seafile-client` image's entrypoint uses `/library` as the sync destination and chowns it at startup. Mounting the NAS folder to any other path (e.g. `/data/sync`) results in seaf-cli syncing an empty directory and reporting 0 bytes forever.
+**Why:** The image was designed with `/library` as the fixed sync path and `/seafile` for state data.
+**Do not change because:** `/library` and `/seafile` are hardcoded in the image entrypoint. State volume must mount to `/seafile`, NAS folder to `/library`.
+
 ### seaf-cli env vars use SEAF_* prefix, not the obvious names
 **Looks like:** Wrong env var names — you'd expect `SERVER_URL`, `USERNAME`, `PASSWORD`, `LIBRARY_ID`.
 **Actually:** The correct vars are `SEAF_SERVER_URL`, `SEAF_USERNAME`, `SEAF_PASSWORD`, `SEAF_LIBRARY` (UUID, not a name).
