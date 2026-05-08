@@ -228,6 +228,12 @@ No large third-party packages are included in this repo. Nothing to ignore for A
 **Why:** Synology installs Docker via Package Manager into a non-standard path and doesn't add it to PATH.
 **Do not change because:** You can't change the Synology packaging. Always use the full path in commands.
 
+### M365 SSO replaces Google SSO — u2giants@gmail.com can no longer sign in via SSO
+**Looks like:** The primary admin account is broken.
+**Actually:** `u2giants@gmail.com` and `albert@popcre.com` both have local Seafile passwords and can log in via the email/password form. Only the SSO button changed (Google → Microsoft).
+**Why:** POP Creations uses M365, not Google Workspace. Tenant-locked M365 SSO means only POP Creations staff can self-serve log in — no invitations needed, no public access.
+**Do not change because:** Switching back to Google would allow anyone with a Google account to attempt login. The M365 tenant ID in the OAuth URLs is what enforces the org boundary.
+
 ### seafevents.conf references Elasticsearch that doesn't exist
 **Looks like:** A misconfiguration causing errors.
 **Actually:** Intentional — Elasticsearch is not deployed due to RAM constraints (it needs ~2GB on a 4GB server). The config logs a connection error every 10 minutes; this is harmless.
@@ -259,7 +265,7 @@ No large third-party packages are included in this repo. Nothing to ignore for A
 | MySQL seafile user password | `/opt/seafile/.env` on VPS | App DB connection |
 | JWT private key | `/opt/seafile/.env` on VPS | Internal service tokens |
 | S3 key ID + secret | `/opt/seafile/.env` on VPS | Linode Object Storage |
-| Google OAuth client ID + secret | `/opt/seafile/CREDENTIALS.txt` on VPS | SSO login |
+| Microsoft 365 OAuth client ID + secret | `/opt/seafile/CREDENTIALS.txt` on VPS | SSO login (tenant-locked to POP Creations) |
 | nas-sync@popcre.com password | `/opt/seafile/CREDENTIALS.txt` on VPS | seaf-cli NAS sync |
 | Seafile library UUIDs | `/opt/seafile/CREDENTIALS.txt` on VPS + this file | seaf-cli config |
 | Cloudflare API token | From Albert | DNS management |
@@ -276,6 +282,8 @@ No large third-party packages are included in this repo. Nothing to ignore for A
 | Seafile hostname | `seafile.designflow.app` |
 | Cloudflare zone ID | `921eb133a3f7d5802780445b283f84ce` |
 | Cloudflare DNS record ID | `2c1cdc08f9f79d9d668970854d9e15a8` |
+| Azure AD tenant ID | `1caeb1c0-a087-4cb9-b046-a5e22404f971` |
+| Azure app (client) ID | `8d9da03c-e5cd-4a23-b987-32aaaed31fe7` |
 | Supabase project | Not used in this project |
 | GitHub repo | `https://github.com/u2giants/seafile` |
 | Linode Object Storage region | `br-gru-1` (São Paulo) |

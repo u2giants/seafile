@@ -119,18 +119,20 @@ Seafile requires these to be **separate buckets** — it will refuse to start if
 
 Two methods work simultaneously:
 
-**Google OAuth SSO (primary):**
+**Microsoft 365 SSO (primary — for all staff):**
 ```
-Login page → "Sign in with Google" → Google consent →
+Login page → "Single Sign-On" button → Microsoft login →
 callback to /oauth/callback/ → Seafile maps by email → session
 ```
+Tenant-locked to POP Creations (tenant ID `1caeb1c0-a087-4cb9-b046-a5e22404f971`). Only users in this M365 tenant can authenticate. Self-registration is disabled (`ENABLE_SIGNUP = False`). Azure AD app: "Seafile POP Creations" (client ID `8d9da03c-e5cd-4a23-b987-32aaaed31fe7`).
 
-**Local password (fallback):**
+**Local password (admin fallback only):**
 ```
-Login page → email + password → seahub_db lookup → session
+Login page → email + password form → seahub_db lookup → session
 ```
+`albert@popcre.com` has a local password in CREDENTIALS.txt. Use this if SSO is unavailable. `nas-sync@popcre.com` is local-only (machine account). `u2giants@gmail.com` also has a local password (the initial admin password set during first start — see CREDENTIALS.txt).
 
-Both paths are active. OAuth is configured in `seahub_settings.py`. Local passwords exist for all accounts created before or without SSO. `u2giants@gmail.com` has both; `albert@popcre.com` is local-only; `nas-sync@popcre.com` is local-only (machine account, no OAuth needed).
+Google OAuth was active until 2026-05-08, then replaced by M365 SSO.
 
 ## Elasticsearch (not deployed)
 

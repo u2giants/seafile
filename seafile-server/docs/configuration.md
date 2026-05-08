@@ -93,30 +93,34 @@ ENABLE_FACE_RECOGNITION=false
 
 Main Django settings for the Seahub web UI. Lives inside the Docker volume — persists across container restarts. After editing, run `docker restart seafile`.
 
-**Current live content:**
+**Current live content (Microsoft 365 SSO — tenant-locked to POP Creations):**
 
 ```python
 SECRET_KEY = "2aqy%o)8kxoix_0#jdz4uzi+r&cx+ix&8z#+w&uh^!y*(lhyp7"
 TIME_ZONE = 'America/Sao_Paulo'
 
+# Microsoft 365 OAuth SSO — tenant-locked to POP Creations
 ENABLE_OAUTH = True
 OAUTH_ENABLE_INSECURE_TRANSPORT = False
 OAUTH_CLIENT_ID = '<see CREDENTIALS.txt on VPS>'
 OAUTH_CLIENT_SECRET = '<see CREDENTIALS.txt on VPS>'
 OAUTH_REDIRECT_URL = 'https://seafile.designflow.app/oauth/callback/'
-OAUTH_PROVIDER_DOMAIN = 'accounts.google.com'
-OAUTH_AUTHORIZATION_URL = 'https://accounts.google.com/o/oauth2/auth'
-OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token'
-OAUTH_USER_INFO_URL = 'https://www.googleapis.com/oauth2/v1/userinfo'
+OAUTH_PROVIDER_DOMAIN = 'login.microsoftonline.com'
+OAUTH_AUTHORIZATION_URL = 'https://login.microsoftonline.com/1caeb1c0-a087-4cb9-b046-a5e22404f971/oauth2/v2.0/authorize'
+OAUTH_TOKEN_URL = 'https://login.microsoftonline.com/1caeb1c0-a087-4cb9-b046-a5e22404f971/oauth2/v2.0/token'
+OAUTH_USER_INFO_URL = 'https://graph.microsoft.com/oidc/userinfo'
 OAUTH_SCOPE = ['openid', 'email', 'profile']
 OAUTH_ATTRIBUTE_MAP = {
     'id': (True, 'sub'),
     'name': (False, 'name'),
     'email': (True, 'email'),
 }
+ENABLE_SIGNUP = False
 ```
 
-The `CONFIGURE_OAUTH.sh` script appends this block. It is idempotent only if run once — running it twice will duplicate the block. Check the file before running.
+The tenant-specific authorization/token URLs (with the tenant ID rather than `/common/`) mean only POP Creations M365 users can authenticate. `ENABLE_SIGNUP = False` prevents account creation outside SSO.
+
+**Admin fallback login:** `albert@popcre.com` has a local Seafile password (in CREDENTIALS.txt) and can log in via the email/password form even if SSO is unavailable. Do not use the SSO button for admin emergency access.
 
 ---
 
