@@ -137,11 +137,10 @@ This is not an application with a custom data model. The data model is Seafile's
 
 | Library name | UUID | Status |
 |-------------|------|--------|
-| Active Projects | `0dee1650-878e-4ca3-9533-e3876ebd4c1e` | Exists in Seafile; not currently synced from NAS |
-| Assets | `09afbd46-87c6-45b5-a305-431310af20a5` | Exists in Seafile; NAS path unknown — pending |
-| Seasonal | `8108c1df-6dc1-4e22-bc1f-4eb8e8ef5d2b` | Exists in Seafile; NAS path unknown — pending |
-| Character Licensed | `177cf9de-3066-482e-956a-7ae8d8786c6d` | Syncing from NAS ✅ |
-| Generic Decor | `1b116ab7-d66b-4411-a691-21f34eadb731` | Syncing from NAS ✅ |
+| Character Licensed | `177cf9de-3066-482e-956a-7ae8d8786c6d` | ✅ Syncing from NAS |
+| Generic Decor | `1b116ab7-d66b-4411-a691-21f34eadb731` | ✅ Syncing from NAS |
+
+These are the only two libraries. "Active Projects", "Assets", and "Seasonal" were hallucinated by a prior AI session and do not exist.
 
 ### Accounts
 
@@ -174,8 +173,6 @@ These follow the standard naming convention.
 |---------------|----------|----------------|------|--------|
 | `seaf-cli-char-licensed` | `/volume1/mac/Decor/Character Licensed` | Character Licensed | `177cf9de-3066-482e-956a-7ae8d8786c6d` | ✅ Running |
 | `seaf-cli-generic-decor` | `/volume1/mac/Decor/Generic Decor` | Generic Decor | `1b116ab7-d66b-4411-a691-21f34eadb731` | ✅ Running |
-| `seaf-cli-assets` | TBD — NAS path unknown | Assets | `09afbd46-87c6-45b5-a305-431310af20a5` | ⏳ Not deployed |
-| `seaf-cli-seasonal` | TBD — NAS path unknown | Seasonal | `8108c1df-6dc1-4e22-bc1f-4eb8e8ef5d2b` | ⏳ Not deployed |
 
 There is no Coolify for this project. Containers are managed directly via Docker on the Linode VPS.
 
@@ -320,8 +317,6 @@ No incidents recorded. Add here if a disaster or near-miss occurs: what happened
 
 ## Pending Work
 
-- [ ] **Assets sync container** — NAS path for Assets library unknown. Ask Albert which folder under `/volume1/mac` corresponds to "Assets". Container name will be `seaf-cli-assets`.
-- [ ] **Seasonal sync container** — NAS path for Seasonal library unknown. Ask Albert which folder under `/volume1/mac` corresponds to "Seasonal". Container name will be `seaf-cli-seasonal`.
-- [ ] **Designer user accounts (8 people)** — São Paulo designers not yet onboarded. Send them `https://seafile.designflow.app`; they sign in with Google SSO; accounts auto-create. Then share Active Projects, Assets, Seasonal libraries with each at Read/Write.
-- [ ] **Delete HANDOFF.md** — once the above three items are complete.
+- [ ] **Designer user accounts (8 people)** — São Paulo designers not yet onboarded. Send them `https://seafile.designflow.app`; they sign in with Google SSO; accounts auto-create. Then share Character Licensed and Generic Decor libraries with each at Read/Write.
+- [ ] **Delete HANDOFF.md** — once designer accounts are done.
 - [ ] **Elasticsearch** — optional, not blocking. Requires server upgrade or RAM headroom. `vm.max_map_count` is already set.
