@@ -1,0 +1,52 @@
+# Synology NAS — Seafile seaf-cli sync containers
+# One service per library. Each syncs a NAS folder to a Seafile library.
+# Deploy via Synology Container Manager or: docker compose up -d
+
+services:
+
+  seaf-cli-active-projects:
+    image: seafileltd/seaf-cli:latest
+    container_name: seaf-cli-active-projects
+    restart: unless-stopped
+    volumes:
+      - /volume1/ActiveProjects:/data/sync    # ← adjust NAS path
+      - seaf-cli-active-projects-data:/root/.ccnet
+    environment:
+      - SERVER_URL=https://seafile.designflow.app
+      - USERNAME=nas-sync@popcre.com
+      - PASSWORD=${NAS_SYNC_PASSWORD}
+      - LIBRARY_ID=0dee1650-878e-4ca3-9533-e3876ebd4c1e
+      - SYNC_PATH=/data/sync
+
+  seaf-cli-assets:
+    image: seafileltd/seaf-cli:latest
+    container_name: seaf-cli-assets
+    restart: unless-stopped
+    volumes:
+      - /volume1/Assets:/data/sync            # ← adjust NAS path
+      - seaf-cli-assets-data:/root/.ccnet
+    environment:
+      - SERVER_URL=https://seafile.designflow.app
+      - USERNAME=nas-sync@popcre.com
+      - PASSWORD=${NAS_SYNC_PASSWORD}
+      - LIBRARY_ID=09afbd46-87c6-45b5-a305-431310af20a5
+      - SYNC_PATH=/data/sync
+
+  seaf-cli-seasonal:
+    image: seafileltd/seaf-cli:latest
+    container_name: seaf-cli-seasonal
+    restart: unless-stopped
+    volumes:
+      - /volume1/Seasonal:/data/sync          # ← adjust NAS path
+      - seaf-cli-seasonal-data:/root/.ccnet
+    environment:
+      - SERVER_URL=https://seafile.designflow.app
+      - USERNAME=nas-sync@popcre.com
+      - PASSWORD=${NAS_SYNC_PASSWORD}
+      - LIBRARY_ID=8108c1df-6dc1-4e22-bc1f-4eb8e8ef5d2b
+      - SYNC_PATH=/data/sync
+
+volumes:
+  seaf-cli-active-projects-data:
+  seaf-cli-assets-data:
+  seaf-cli-seasonal-data:
