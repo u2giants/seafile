@@ -19,18 +19,19 @@
 # Both containers LIVE on edgesynology1 as of 2026-05-08.
 # See README.md for deploy instructions.
 
+name: seaf-cli
+
 services:
 
   seaf-cli-char-licensed:
     image: flrnnc/seafile-client:latest
     container_name: seaf-cli-char-licensed
     restart: unless-stopped
-    entrypoint: ["/home/seafile/seaf-entrypoint.py"]
+    entrypoint: ["/bin/sh", "-c", "curl -fsSL 'https://raw.githubusercontent.com/u2giants/seafile/main/synology-seaf-cli/seaf-entrypoint.py' -o /tmp/seaf-entrypoint.py && chmod +x /tmp/seaf-entrypoint.py && exec python3 /tmp/seaf-entrypoint.py"]
     volumes:
       - /volume1/mac/Decor/Character Licensed:/source:ro
       - seaf-cli-char-licensed-staging:/library
       - seaf-cli-char-licensed-data:/seafile
-      - /volume1/docker/seaf-cli/seaf-entrypoint.py:/home/seafile/seaf-entrypoint.py:ro
     environment:
       - SEAF_SERVER_URL=https://seafile.designflow.app
       - SEAF_USERNAME
@@ -42,12 +43,11 @@ services:
     image: flrnnc/seafile-client:latest
     container_name: seaf-cli-generic-decor
     restart: unless-stopped
-    entrypoint: ["/home/seafile/seaf-entrypoint.py"]
+    entrypoint: ["/bin/sh", "-c", "curl -fsSL 'https://raw.githubusercontent.com/u2giants/seafile/main/synology-seaf-cli/seaf-entrypoint.py' -o /tmp/seaf-entrypoint.py && chmod +x /tmp/seaf-entrypoint.py && exec python3 /tmp/seaf-entrypoint.py"]
     volumes:
       - /volume1/mac/Decor/Generic Decor:/source:ro
       - seaf-cli-generic-decor-staging:/library
       - seaf-cli-generic-decor-data:/seafile
-      - /volume1/docker/seaf-cli/seaf-entrypoint.py:/home/seafile/seaf-entrypoint.py:ro
     environment:
       - SEAF_SERVER_URL=https://seafile.designflow.app
       - SEAF_USERNAME
@@ -57,6 +57,10 @@ services:
 
 volumes:
   seaf-cli-char-licensed-data:
+    name: seaf-cli-char-licensed-data
   seaf-cli-char-licensed-staging:
+    name: seaf-cli-char-licensed-staging
   seaf-cli-generic-decor-data:
+    name: seaf-cli-generic-decor-data
   seaf-cli-generic-decor-staging:
+    name: seaf-cli-generic-decor-staging

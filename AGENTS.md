@@ -210,11 +210,11 @@ No large third-party packages are included in this repo. Nothing to ignore for A
 **Why:** Seafile does not publish an official seaf-cli Docker image.
 **Do not change because:** This is the only working image. `flowgunso` is a deprecated alias for `flrnnc` — always use `flrnnc`.
 
-### seaf-cli NAS path mounts to /library, not /data/sync
-**Looks like:** The volume mount destination should be wherever you want to sync.
-**Actually:** The `flrnnc/seafile-client` image's entrypoint uses `/library` as the sync destination and chowns it at startup. Mounting the NAS folder to any other path (e.g. `/data/sync`) results in seaf-cli syncing an empty directory and reporting 0 bytes forever.
-**Why:** The image was designed with `/library` as the fixed sync path and `/seafile` for state data.
-**Do not change because:** `/library` and `/seafile` are hardcoded in the image entrypoint. State volume must mount to `/seafile`, NAS folder to `/library`.
+### NAS source mounts to /source; /library is a Docker staging volume
+**Looks like:** The NAS folder should mount directly to `/library`.
+**Actually:** The `flrnnc/seafile-client` image uses `/library` as its sync target and `/seafile` for state. We mount the NAS folder read-only at `/source`, and a staging Docker volume at `/library`. A Python wrapper (`seaf-entrypoint.py`) populates `/library` from `/source` (with optional date filtering via `SEAF_INGEST_DAYS`) before handing off to the image's own `entrypoint.py`.
+**Why:** Enables per-library date-range filtering without modifying the upstream image. seaf-cli sees a clean, filtered `/library` and syncs that to Seafile.
+**Do not change because:** If you mount the NAS folder directly to `/library` and bypass the wrapper, the date filter is lost. The staging volume also prevents seaf-cli from uploading every file on the NAS before the filter can run.
 
 ### seaf-cli env vars use SEAF_* prefix, not the obvious names
 **Looks like:** Wrong env var names — you'd expect `SERVER_URL`, `USERNAME`, `PASSWORD`, `LIBRARY_ID`.
@@ -254,9 +254,15 @@ No large third-party packages are included in this repo. Nothing to ignore for A
 
 ### seaf-cli compose file is deployed from /tmp on the NAS
 **Looks like:** The compose file will be lost on reboot.
-**Actually:** The container has `restart: unless-stopped` — Docker restores it automatically after reboot without needing the compose file. The compose file is only needed for initial deploy or if the container is manually removed.
-**Why:** The NAS MCP `run_command` tool blocks `mkdir` and write redirection operators. Files must be written via base64+tee, and `/tmp` is the most reliable writable path.
+**Actually:** The container has `restart: unless-stopped` — Docker restores it automatically after reboot without needing the compose file. The compose file is only needed for initial deploy or if the container is manually removed. The `seaf-entrypoint.py` wrapper is downloaded fresh from GitHub at each container start (not mounted from the NAS filesystem), so no persistent NAS path is required for it either.
+**Why:** The NAS MCP `run_command` tool blocks `mkdir` and write redirection operators. Files must be written via tee, and `/tmp` is the most reliable writable path.
 **Do not change because:** This is a workaround for MCP write restrictions. If the container is ever manually removed: re-write the compose file from this repo and re-run `docker-compose up -d`.
+
+### SEAF_INGEST_DAYS controls the per-library upload window
+**Looks like:** An undocumented environment variable.
+**Actually:** Set in `docker-compose.yml` under each service's `environment:` block. Tells the `seaf-entrypoint.py` wrapper to only include files whose mtime is within the last N days. Refreshes every hour so newly-modified files enter the window automatically.
+**Why:** POP Creations designers only need recent assets; uploading the entire 28TB library to S3 would be expensive and slow.
+**Do not change because:** Lowering the value removes files from Seafile (seaf-cli sees them disappear from /library). Raising it adds them back. Removing the line entirely syncs all files.
 
 ---
 
