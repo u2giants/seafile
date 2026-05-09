@@ -1,5 +1,20 @@
 # Synology NAS — Seafile seaf-cli upload containers
-# One service per library. Each mirrors a NAS folder to a Seafile library.
+# One service per library. Each stages a date-filtered view of a NAS folder
+# into /library, then seaf-cli uploads /library to the Seafile server.
+#
+# === Settings ===
+#
+# SEAF_INGEST_DAYS   Only upload files modified within this many days.
+#                    Set per-library in the environment blocks below.
+#                    Remove the line (or leave blank) to upload all files.
+#
+#   Examples:
+#     - SEAF_INGEST_DAYS=365    # 1 year
+#     - SEAF_INGEST_DAYS=730    # 2 years
+#     - SEAF_INGEST_DAYS=1825   # 5 years
+#
+# =================
+#
 # Image: flrnnc/seafile-client
 # Both containers LIVE on edgesynology1 as of 2026-05-08.
 # See README.md for deploy instructions.
@@ -10,30 +25,38 @@ services:
     image: flrnnc/seafile-client:latest
     container_name: seaf-cli-char-licensed
     restart: unless-stopped
-    entrypoint: ["/home/seafile/entrypoint.py"]
+    entrypoint: ["/home/seafile/seaf-entrypoint.py"]
     volumes:
-      - /volume1/mac/Decor/Character Licensed:/library
+      - /volume1/mac/Decor/Character Licensed:/source:ro
+      - seaf-cli-char-licensed-staging:/library
       - seaf-cli-char-licensed-data:/seafile
+      - /volume1/docker/seaf-cli/seaf-entrypoint.py:/home/seafile/seaf-entrypoint.py:ro
     environment:
       - SEAF_SERVER_URL=https://seafile.designflow.app
       - SEAF_USERNAME
       - SEAF_PASSWORD
       - SEAF_LIBRARY=177cf9de-3066-482e-956a-7ae8d8786c6d
+      - SEAF_INGEST_DAYS=730
 
   seaf-cli-generic-decor:
     image: flrnnc/seafile-client:latest
     container_name: seaf-cli-generic-decor
     restart: unless-stopped
-    entrypoint: ["/home/seafile/entrypoint.py"]
+    entrypoint: ["/home/seafile/seaf-entrypoint.py"]
     volumes:
-      - /volume1/mac/Decor/Generic Decor:/library
+      - /volume1/mac/Decor/Generic Decor:/source:ro
+      - seaf-cli-generic-decor-staging:/library
       - seaf-cli-generic-decor-data:/seafile
+      - /volume1/docker/seaf-cli/seaf-entrypoint.py:/home/seafile/seaf-entrypoint.py:ro
     environment:
       - SEAF_SERVER_URL=https://seafile.designflow.app
       - SEAF_USERNAME
       - SEAF_PASSWORD
       - SEAF_LIBRARY=1b116ab7-d66b-4411-a691-21f34eadb731
+      - SEAF_INGEST_DAYS=730
 
 volumes:
   seaf-cli-char-licensed-data:
+  seaf-cli-char-licensed-staging:
   seaf-cli-generic-decor-data:
+  seaf-cli-generic-decor-staging:
