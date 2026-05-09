@@ -8,8 +8,9 @@ services:
     volumes:
       - nas-settings-data:/data
     environment:
-      - AUTH_PASSWORD=${NAS_SETTINGS_PASSWORD}
       - SECRET_KEY=${NAS_SETTINGS_SECRET_KEY}
+      - SEAFILE_INTERNAL_URL=http://seafile:8000
+      - SEAFILE_PUBLIC_HOST=seafile.designflow.app
     labels:
       caddy: https://seafile.designflow.app
       caddy.handle_path: /nas-settings*

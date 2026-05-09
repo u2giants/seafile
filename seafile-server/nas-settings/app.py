@@ -5,14 +5,20 @@ nas-settings/app.py
 Flask web app for managing NAS sync configuration (SEAF_INGEST_DAYS)
 per Seafile library. Runs behind Caddy at /nas-settings/.
 
+Auth: delegates to Seafile admin session. Any request that carries a valid
+Seafile sessionid cookie belonging to a system admin is allowed in. No
+separate login required — the user's existing Seafile session is reused.
+
 Env vars:
-  AUTH_PASSWORD   Required. Password for the settings UI.
-  SECRET_KEY      Required. Random string for Flask session signing.
+  SEAFILE_INTERNAL_URL  Base URL for Seafile's internal API (default: http://seafile:8000)
+  SEAFILE_PUBLIC_HOST   Public hostname used in the Cookie/Host header (default: seafile.designflow.app)
+  SECRET_KEY            Required. Random string for Flask session signing.
 
 State is persisted to /data/settings.json.
 """
 import json
 import os
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -22,8 +28,6 @@ from flask import (
     redirect,
     render_template,
     request,
-    session,
-    url_for,
 )
 
 # ---------------------------------------------------------------------------
@@ -82,9 +86,10 @@ app.secret_key = os.environ.get("SECRET_KEY", "")
 if not app.secret_key:
     raise RuntimeError("SECRET_KEY env var is required")
 
-AUTH_PASSWORD = os.environ.get("AUTH_PASSWORD", "")
-if not AUTH_PASSWORD:
-    raise RuntimeError("AUTH_PASSWORD env var is required")
+_SEAFILE_INTERNAL = os.environ.get("SEAFILE_INTERNAL_URL", "http://seafile:8000").rstrip("/")
+_SEAFILE_PUBLIC_HOST = os.environ.get("SEAFILE_PUBLIC_HOST", "seafile.designflow.app")
+_SEAFILE_ADMIN_API = f"{_SEAFILE_INTERNAL}/api/v2.1/admin/sysinfo/"
+_SEAFILE_LOGIN_URL = f"https://{_SEAFILE_PUBLIC_HOST}/oauth/login/"
 
 app.wsgi_app = PrefixMiddleware(app.wsgi_app, prefix="/nas-settings")
 
@@ -118,8 +123,28 @@ def save_settings(data: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
-def logged_in() -> bool:
-    return session.get("authenticated") is True
+def is_seafile_admin() -> bool:
+    """Return True if the current request carries a valid Seafile admin session."""
+    sessionid = request.cookies.get("sessionid", "")
+    if not sessionid:
+        return False
+    try:
+        req = urllib.request.Request(
+            _SEAFILE_ADMIN_API,
+            headers={
+                "Cookie": f"sessionid={sessionid}",
+                "Host": _SEAFILE_PUBLIC_HOST,
+            },
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status == 200
+    except urllib.error.HTTPError as exc:
+        # 403 = authenticated but not admin; 401 = not authenticated — both mean no access
+        if exc.code in (401, 403):
+            return False
+        raise
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -127,27 +152,10 @@ def logged_in() -> bool:
 # ---------------------------------------------------------------------------
 
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    error = None
-    if request.method == "POST":
-        if request.form.get("password") == AUTH_PASSWORD:
-            session["authenticated"] = True
-            return redirect(url_for("index"))
-        error = "Incorrect password. Please try again."
-    return render_template("login.html", error=error)
-
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect(url_for("login"))
-
-
 @app.route("/", methods=["GET", "POST"])
 def index():
-    if not logged_in():
-        return redirect(url_for("login"))
+    if not is_seafile_admin():
+        return redirect(_SEAFILE_LOGIN_URL)
 
     settings = load_settings()
     saved = False
