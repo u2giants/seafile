@@ -27,7 +27,11 @@ services:
     image: flrnnc/seafile-client:latest
     container_name: seaf-cli-char-licensed
     restart: unless-stopped
-    entrypoint: ["/bin/sh", "-c", "curl -fsSL 'https://raw.githubusercontent.com/u2giants/seafile/main/synology-seaf-cli/seaf-entrypoint.py' -o /tmp/seaf-entrypoint.py && chmod +x /tmp/seaf-entrypoint.py && exec python3 /tmp/seaf-entrypoint.py"]
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        python3 -c 'import urllib.request as r, os; r.urlretrieve("https://raw.githubusercontent.com/u2giants/seafile/main/synology-seaf-cli/seaf-entrypoint.py", "/tmp/sep.py"); os.chmod("/tmp/sep.py", 0o755)' && exec python3 /tmp/sep.py
     volumes:
       - /volume1/mac/Decor/Character Licensed:/source:ro
       - seaf-cli-char-licensed-staging:/library
@@ -43,7 +47,11 @@ services:
     image: flrnnc/seafile-client:latest
     container_name: seaf-cli-generic-decor
     restart: unless-stopped
-    entrypoint: ["/bin/sh", "-c", "curl -fsSL 'https://raw.githubusercontent.com/u2giants/seafile/main/synology-seaf-cli/seaf-entrypoint.py' -o /tmp/seaf-entrypoint.py && chmod +x /tmp/seaf-entrypoint.py && exec python3 /tmp/seaf-entrypoint.py"]
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        python3 -c 'import urllib.request as r, os; r.urlretrieve("https://raw.githubusercontent.com/u2giants/seafile/main/synology-seaf-cli/seaf-entrypoint.py", "/tmp/sep.py"); os.chmod("/tmp/sep.py", 0o755)' && exec python3 /tmp/sep.py
     volumes:
       - /volume1/mac/Decor/Generic Decor:/source:ro
       - seaf-cli-generic-decor-staging:/library
