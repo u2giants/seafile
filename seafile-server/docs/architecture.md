@@ -132,7 +132,7 @@ Login page → email + password form → seahub_db lookup → session
 ```
 `albert@popcre.com` has a local password in CREDENTIALS.txt. Use this if SSO is unavailable. `nas-sync@popcre.com` is local-only (machine account). `u2giants@gmail.com` also has a local password (the initial admin password set during first start — see CREDENTIALS.txt).
 
-Google OAuth was active until 2026-05-08, then replaced by M365 SSO.
+Authentication is M365 SSO (tenant-locked to POP Creations). `albert@popcre.com` and `u2giants@gmail.com` also have local passwords in CREDENTIALS.txt as a fallback.
 
 ## Elasticsearch (not deployed)
 

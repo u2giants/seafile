@@ -33,7 +33,7 @@ You may **not**:
 
 ## Commit Style
 
-- Short imperative subject line (`deploy seaf-cli-assets`, `fix caddy TLS config`)
+- Short imperative subject line (`fix caddy TLS config`, `add nas-settings panel`)
 - No ticket numbers or issue references needed
 - Commit meaningful changes together — don't split a compose change from its doc update
 

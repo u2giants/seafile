@@ -58,7 +58,7 @@ docker exec seafile python3 -c "import ast; ast.parse(open('/shared/seafile/conf
 
 **Login fails with correct password** — Check `seahub_settings.py` for syntax errors (duplicate OAuth blocks, bad indentation). Run syntax check above. `docker restart seafile` after any fix.
 
-**Google SSO button missing** — `ENABLE_OAUTH = True` missing or seahub_settings.py has a syntax error.
+**M365 SSO not working** — `ENABLE_OAUTH = True` missing or seahub_settings.py has a syntax error. Check `OAUTH_ATTRIBUTE_MAP` — the `id` key must be optional (`False`) since Microsoft's OIDC endpoint returns `sub`, not `id`.
 
 **TLS certificate error** — DNS not resolved yet, or Let's Encrypt couldn't reach port 80. Check `docker logs seafile-caddy`.
 
@@ -109,19 +109,8 @@ curl -s "https://seafile.designflow.app/api2/repos/" \
 ### Add a user (admin panel)
 Admin Panel → Users → Add User → email, password, role: Default User.
 
-### Designer onboarding via Google SSO
-Send designers `https://seafile.designflow.app`. They click "Sign in with Google" — account is auto-created on first login. Then share libraries:
-
-```bash
-# Share via web UI: open library → Share icon → Share to User → email → Read/Write
-# Or via API (as the library owner):
-NAS_TOKEN=$(curl -s -d "username=nas-sync@popcre.com&password=PASS" \
-  https://seafile.designflow.app/api2/auth-token/ | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
-
-curl -s -X PUT "https://seafile.designflow.app/api2/repos/<UUID>/dir/shared_items/?p=/" \
-  -H "Authorization: Token $NAS_TOKEN" \
-  -d "share_type=user&username=designer@example.com&permission=rw"
-```
+### Designer onboarding via M365 SSO
+Send designers `https://seafile.designflow.app`. They click "Sign in with Microsoft" — account is auto-created on first login (must have a POP Creations M365 account in the tenant). Then share libraries via the web UI: open library → Share icon → Share to User → email → Read/Write.
 
 ### Admin panel
 https://seafile.designflow.app/sys/useradmin/

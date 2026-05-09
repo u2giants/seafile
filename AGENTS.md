@@ -140,7 +140,7 @@ This is not an application with a custom data model. The data model is Seafile's
 | Character Licensed | `177cf9de-3066-482e-956a-7ae8d8786c6d` | ✅ Syncing from NAS |
 | Generic Decor | `1b116ab7-d66b-4411-a691-21f34eadb731` | ✅ Syncing from NAS |
 
-These are the only two libraries. "Active Projects", "Assets", and "Seasonal" were hallucinated by a prior AI session and do not exist.
+These are the only two libraries.
 
 ### Accounts
 

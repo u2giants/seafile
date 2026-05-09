@@ -100,13 +100,10 @@ If renewal fails: verify DNS still resolves correctly and port 80 is reachable (
 
 ## Remaining Work
 
-### 1. Synology seaf-cli containers (next immediate step)
-Deploy the containers in `synology-seaf-cli/` on the NYC Synology NAS. See [`synology-seaf-cli/README.md`](../../synology-seaf-cli/README.md). NAS sync account and library UUIDs are already provisioned.
+### 1. Designer user accounts
+Send designers `https://seafile.designflow.app` — accounts are created automatically on first M365 SSO login (requires a POP Creations Microsoft account in the tenant). Albert then shares the relevant libraries via the web UI.
 
-### 2. Designer user accounts
-8 São Paulo designers need access. Easiest path: send them `https://seafile.designflow.app` and have them sign in with Google — accounts are created automatically on first SSO login. Albert then shares the relevant libraries with them via the web UI.
-
-To share a library: log in as `u2giants@gmail.com` → open library → Share → Share to User → enter designer email → Read/Write.
+To share a library: log in → open library → Share → Share to User → enter designer email → Read/Write.
 
 ### 3. Elasticsearch (optional)
 Full-text search inside file contents. Not deployed due to RAM constraints on a 4GB server. If the server is upgraded or Elasticsearch is acceptable:
