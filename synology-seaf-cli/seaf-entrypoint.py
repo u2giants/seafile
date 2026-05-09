@@ -11,12 +11,20 @@ hands off to the upstream entrypoint at /home/seafile/entrypoint.py.
   SEAF_INGEST_DAYS   Integer. Only include files modified within this many days.
                      Leave unset or blank to include all files regardless of age.
                      Examples:  365 (1 year)  730 (2 years)  1825 (5 years)
+
+  SEAF_SETTINGS_URL  Optional. URL to a JSON settings endpoint (e.g. the
+                     nas-settings panel's /api/settings route). When set, the
+                     app fetches per-library ingest_days keyed by SEAF_LIBRARY
+                     UUID at startup and on every hourly refresh. On fetch
+                     failure it falls back silently to SEAF_INGEST_DAYS.
 """
+import json
 import logging
 import os
 import shutil
 import threading
 import time
+import urllib.request
 from pathlib import Path
 
 logging.basicConfig(
@@ -28,6 +36,43 @@ log = logging.getLogger('seaf-entrypoint')
 SOURCE = Path('/source')
 LIBRARY = Path('/library')
 UPSTREAM = '/home/seafile/entrypoint.py'
+
+
+def fetch_ingest_days_from_url(settings_url: str, library_uuid: str, fallback) -> object:
+    """
+    Fetch per-library ingest_days from the settings API.
+
+    Returns the integer ingest_days value for the matching library, or
+    `fallback` if the fetch fails or the library is not found.
+    """
+    try:
+        with urllib.request.urlopen(settings_url, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+        for entry in data.values():
+            if entry.get("uuid") == library_uuid:
+                days = entry.get("ingest_days")
+                # None means "all files" — pass through as-is
+                log.info(
+                    'Settings URL: ingest_days=%s for library %s',
+                    days if days is not None else 'all',
+                    library_uuid,
+                )
+                return days
+        log.warning('Settings URL: library %s not found in response, using fallback', library_uuid)
+    except Exception as exc:
+        log.warning('Settings URL fetch failed (%s), using fallback SEAF_INGEST_DAYS', exc)
+    return fallback
+
+
+def resolve_ingest_days(env_days, settings_url: str | None, library_uuid: str | None):
+    """
+    Return the effective ingest_days value.
+
+    Priority: SEAF_SETTINGS_URL (if reachable and library found) > SEAF_INGEST_DAYS env var.
+    """
+    if settings_url and library_uuid:
+        return fetch_ingest_days_from_url(settings_url, library_uuid, fallback=env_days)
+    return env_days
 
 
 def populate(days=None):
@@ -77,19 +122,27 @@ def populate(days=None):
     log.info('Library ready — %d files updated', copied)
 
 
-def refresh_loop(days=None):
+def refresh_loop(env_days, settings_url, library_uuid):
     def _run():
         while True:
             time.sleep(3600)
             log.info('Hourly refresh — re-populating library')
+            days = resolve_ingest_days(env_days, settings_url, library_uuid)
             populate(days)
     threading.Thread(target=_run, daemon=True).start()
 
 
 if __name__ == '__main__':
     raw = os.environ.get('SEAF_INGEST_DAYS', '').strip()
-    days = int(raw) if raw else None
-    log.info('SEAF_INGEST_DAYS=%s', days if days else 'not set (all files)')
+    env_days = int(raw) if raw else None
+    log.info('SEAF_INGEST_DAYS=%s', env_days if env_days else 'not set (all files)')
+
+    settings_url = os.environ.get('SEAF_SETTINGS_URL', '').strip() or None
+    library_uuid = os.environ.get('SEAF_LIBRARY', '').strip() or None
+    if settings_url:
+        log.info('SEAF_SETTINGS_URL=%s', settings_url)
+
+    days = resolve_ingest_days(env_days, settings_url, library_uuid)
     populate(days)
-    refresh_loop(days)
+    refresh_loop(env_days, settings_url, library_uuid)
     os.execv(UPSTREAM, [UPSTREAM])

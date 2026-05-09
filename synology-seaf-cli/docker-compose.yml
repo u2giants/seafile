@@ -42,6 +42,7 @@ services:
       - SEAF_PASSWORD
       - SEAF_LIBRARY=177cf9de-3066-482e-956a-7ae8d8786c6d
       - SEAF_INGEST_DAYS=730
+      - SEAF_SETTINGS_URL=https://seafile.designflow.app/nas-settings/api/settings
 
   seaf-cli-generic-decor:
     image: flrnnc/seafile-client:latest
@@ -62,6 +63,7 @@ services:
       - SEAF_PASSWORD
       - SEAF_LIBRARY=1b116ab7-d66b-4411-a691-21f34eadb731
       - SEAF_INGEST_DAYS=730
+      - SEAF_SETTINGS_URL=https://seafile.designflow.app/nas-settings/api/settings
 
 volumes:
   seaf-cli-char-licensed-data:

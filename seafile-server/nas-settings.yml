@@ -1,0 +1,26 @@
+services:
+  nas-settings:
+    build:
+      context: ./nas-settings
+    image: nas-settings:local
+    container_name: nas-settings
+    restart: unless-stopped
+    volumes:
+      - nas-settings-data:/data
+    environment:
+      - AUTH_PASSWORD=${NAS_SETTINGS_PASSWORD}
+      - SECRET_KEY=${NAS_SETTINGS_SECRET_KEY}
+    labels:
+      caddy: https://seafile.designflow.app
+      caddy.handle_path: /nas-settings*
+      caddy.handle_path.reverse_proxy: "{{upstreams 5000}}"
+    networks:
+      - seafile-net
+
+volumes:
+  nas-settings-data:
+
+networks:
+  seafile-net:
+    name: seafile-net
+    external: true
