@@ -1,6 +1,10 @@
 #!/bin/bash
-# Configure Google OAuth SSO
-# Run AFTER Seafile is running and you have the Google OAuth Client ID & Secret
+# DEPRECATED — DO NOT RUN
+# This script configured Google OAuth SSO. Google SSO has been replaced by
+# Microsoft 365 SSO, which is configured directly in seahub_settings.py.
+# This script is retained as a reference only.
+#
+# Original purpose: Configure Google OAuth SSO
 # Usage: sudo bash /opt/seafile/CONFIGURE_OAUTH.sh YOUR_CLIENT_ID YOUR_CLIENT_SECRET
 
 CLIENT_ID="$1"

@@ -23,6 +23,24 @@ docker compose -f /opt/seafile/seafile-server.yml -f /opt/seafile/caddy.yml ps
 
 All containers have `restart: unless-stopped` — they come back automatically after a reboot.
 
+## nas-settings Panel
+
+The `nas-settings` container is deployed from `seafile-server/nas-settings.yml` in the repo (not included in `COMPOSE_FILE` in `.env`). It is managed separately:
+
+```bash
+# Start / restart
+cd /opt/seafile && docker compose \
+  -f seafile-server.yml -f caddy.yml \
+  -f /home/ai/seafile-repo/seafile-server/nas-settings.yml \
+  up -d nas-settings
+
+# Rebuild after code changes to seafile-server/nas-settings/
+cd /home/ai/seafile-repo/seafile-server && docker compose -f nas-settings.yml build nas-settings
+# Then restart as above
+```
+
+**Note:** The build context in `nas-settings.yml` is `./nas-settings` (relative to the compose file). Run the build from the `seafile-server/` directory, not from `/opt/seafile/`.
+
 ## First-Time Deployment
 
 Use `START_SEAFILE.sh` which runs pre-flight checks before starting:
@@ -50,6 +68,8 @@ docker compose -f seafile-server.yml -f caddy.yml up -d --force-recreate seafile
 docker logs -f seafile   # watch for "Seafile server started"
 ```
 
+4. After a Seafile upgrade, diff the new `sysadmin/sysadmin_react_app.html` against the override in `seahub-data/custom/templates/` — the custom template is a full copy of Seafile's file plus the nav injection script, so upstream changes won't apply automatically.
+
 ## Backup
 
 ### Automatic
@@ -63,7 +83,7 @@ docker exec seafile-mysql mysqldump \
 ```
 
 ### What is NOT backed up
-File data (the 28TB) lives in S3 — inherits Linode's durability. The SQL backup covers only metadata: accounts, sharing, library references, audit logs. Losing the SQL without a backup means losing user accounts and permissions, but file data in S3 remains intact.
+File data lives in S3 — inherits Linode's durability. The SQL backup covers only metadata: accounts, sharing, library references, audit logs. Losing the SQL without a backup means losing user accounts and permissions, but file data in S3 remains intact.
 
 ### Restore
 ```bash
@@ -100,13 +120,13 @@ If renewal fails: verify DNS still resolves correctly and port 80 is reachable (
 
 ## Remaining Work
 
-### 1. Designer user accounts
+### Designer user accounts
 Send designers `https://seafile.designflow.app` — accounts are created automatically on first M365 SSO login (requires a POP Creations Microsoft account in the tenant). Albert then shares the relevant libraries via the web UI.
 
 To share a library: log in → open library → Share → Share to User → enter designer email → Read/Write.
 
-### 3. Elasticsearch (optional)
-Full-text search inside file contents. Not deployed due to RAM constraints on a 4GB server. If the server is upgraded or Elasticsearch is acceptable:
+### Elasticsearch (optional)
+Full-text search inside file contents. Not deployed due to RAM constraints on a 4GB server. If the server is upgraded:
 ```bash
 cd /opt/seafile
 wget https://manual.seafile.com/13.0/repo/docker/pro/elasticsearch.yml

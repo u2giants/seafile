@@ -9,7 +9,7 @@ Master environment file — read by Docker Compose at startup. Changing a value 
 ```
 COMPOSE_FILE='seafile-server.yml,caddy.yml'
 ```
-Defines which files `docker compose` loads by default. Does not include `elasticsearch.yml` or `seadoc.yml` — those components are not deployed.
+Defines which files `docker compose` loads by default when run from `/opt/seafile/`. **`nas-settings.yml` is not in this list** — it lives in the repo and is deployed separately (see [deployment.md](deployment.md)).
 
 ### Images
 
@@ -87,6 +87,14 @@ ENABLE_SEAFILE_AI=false
 ENABLE_FACE_RECOGNITION=false
 ```
 
+### NAS settings panel
+
+```
+NAS_SETTINGS_SECRET_KEY=<random string>    # Flask session signing key
+```
+
+Used by the `nas-settings` container. `SEAFILE_INTERNAL_URL` and `SEAFILE_PUBLIC_HOST` are hardcoded in `nas-settings.yml` (not sourced from `.env`) because they are deployment-invariant for this installation.
+
 ---
 
 ## /opt/seafile-data/seafile/conf/seahub_settings.py
@@ -96,31 +104,32 @@ Main Django settings for the Seahub web UI. Lives inside the Docker volume — p
 **Current live content (Microsoft 365 SSO — tenant-locked to POP Creations):**
 
 ```python
-SECRET_KEY = "2aqy%o)8kxoix_0#jdz4uzi+r&cx+ix&8z#+w&uh^!y*(lhyp7"
+SECRET_KEY = "..."
 TIME_ZONE = 'America/Sao_Paulo'
 
-# Microsoft 365 OAuth SSO — tenant-locked to POP Creations
 ENABLE_OAUTH = True
 OAUTH_ENABLE_INSECURE_TRANSPORT = False
 OAUTH_CLIENT_ID = '<see CREDENTIALS.txt on VPS>'
 OAUTH_CLIENT_SECRET = '<see CREDENTIALS.txt on VPS>'
 OAUTH_REDIRECT_URL = 'https://seafile.designflow.app/oauth/callback/'
 OAUTH_PROVIDER_DOMAIN = 'login.microsoftonline.com'
-OAUTH_AUTHORIZATION_URL = 'https://login.microsoftonline.com/1caeb1c0-a087-4cb9-b046-a5e22404f971/oauth2/v2.0/authorize'
-OAUTH_TOKEN_URL = 'https://login.microsoftonline.com/1caeb1c0-a087-4cb9-b046-a5e22404f971/oauth2/v2.0/token'
+OAUTH_AUTHORIZATION_URL = 'https://login.microsoftonline.com/1caeb1c0-.../oauth2/v2.0/authorize'
+OAUTH_TOKEN_URL = 'https://login.microsoftonline.com/1caeb1c0-.../oauth2/v2.0/token'
 OAUTH_USER_INFO_URL = 'https://graph.microsoft.com/oidc/userinfo'
 OAUTH_SCOPE = ['openid', 'email', 'profile']
 OAUTH_ATTRIBUTE_MAP = {
-    'id': (True, 'sub'),
+    'id': (False, 'sub'),   # Microsoft's OIDC endpoint returns 'sub', not 'id' — must be optional
     'name': (False, 'name'),
     'email': (True, 'email'),
 }
 ENABLE_SIGNUP = False
 ```
 
+**`'id': (False, 'sub')` is intentional.** Microsoft's Graph OIDC userinfo endpoint (`/oidc/userinfo`) returns `sub` but not `id`. Marking `id` as required (`True`) causes "Error, please contact administrator" on every login. Marking it optional allows the flow to fall through to the `email` field, which is how accounts are matched. Do not change this back to `True`.
+
 The tenant-specific authorization/token URLs (with the tenant ID rather than `/common/`) mean only POP Creations M365 users can authenticate. `ENABLE_SIGNUP = False` prevents account creation outside SSO.
 
-**Admin fallback login:** `albert@popcre.com` has a local Seafile password (in CREDENTIALS.txt) and can log in via the email/password form even if SSO is unavailable. Do not use the SSO button for admin emergency access.
+**Admin fallback login:** `albert@popcre.com` has a local Seafile password (in CREDENTIALS.txt) and can log in via the email/password form even if SSO is unavailable.
 
 ---
 
@@ -173,6 +182,14 @@ enabled = false
 ```
 
 WebDAV is disabled. To enable: set `enabled = true` and `docker restart seafile`. No firewall changes needed — WebDAV routes through Caddy on port 443.
+
+---
+
+## /opt/seafile-data/seafile/seahub-data/custom/templates/
+
+Seahub loads templates from this directory before its own `seahub/templates/`. The only override currently in place is `sysadmin/sysadmin_react_app.html`, which is a verbatim copy of Seafile's built-in template plus a MutationObserver script that injects a "NAS Sync Settings" link into the System Admin sidebar nav after the React bundle renders.
+
+**Maintenance note:** This template duplicates Seafile's built-in file. If Seafile is upgraded and the upstream template changes, this copy must be manually diffed and updated. The source is at `/opt/seafile/seafile-pro-server-<version>/seahub/seahub/templates/sysadmin/sysadmin_react_app.html` inside the container.
 
 ---
 

@@ -5,10 +5,10 @@
 ```
 NYC Office                          Linode VPS (172.233.14.233)              São Paulo
                                                                               
-Synology NAS ──── seaf-cli ────►  seafile.designflow.app  ◄──── HTTPS ────  8 designers
+Synology NAS ──── seaf-cli ────►  seafile.designflow.app  ◄──── HTTPS ────  designers
 (source of truth)  (Docker)         (Seafile Pro 13.0)         (browser/
-  28TB library                             │                     desktop app)
-                                           │ reads/writes
+  /volume1/mac/                            │                     desktop app)
+  Decor/…                                  │ reads/writes
                                            ▼
                                   Linode Object Storage
                                     br-gru-1 (São Paulo)
@@ -23,31 +23,35 @@ The VPS does not store file data on disk. All file blocks go to S3. The VPS disk
 
 ## Docker Stack
 
-All four containers run on a single bridge network (`seafile-net`). Only Caddy exposes ports to the host.
+Five containers run on a single bridge network (`seafile-net`). Only Caddy exposes ports to the host.
 
 ```
 Host ports 80, 443
       │
       ▼
-┌─────────────────────────────────────────────────┐
-│ Docker network: seafile-net                     │
-│                                                 │
-│  seafile-caddy ──────────► seafile              │
-│  (Caddy proxy)              (Seafile Pro app)   │
-│  ports 80, 443              port 80 internal    │
-│                                    │            │
-│                          ┌─────────┴────────┐  │
-│                          ▼                  ▼  │
-│                    seafile-mysql       seafile-redis
-│                    (MariaDB 10.11)     (Redis cache)
-│                    port 3306           port 6379    
-└─────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│ Docker network: seafile-net                          │
+│                                                      │
+│  seafile-caddy ──────────► seafile                   │
+│  (Caddy proxy)              (Seafile Pro app)        │
+│  ports 80, 443              port 80 internal         │
+│      │                            │                  │
+│      │                  ┌─────────┴────────┐         │
+│      │                  ▼                  ▼         │
+│      │            seafile-mysql       seafile-redis   │
+│      │            (MariaDB 10.11)     (Redis cache)  │
+│      │            port 3306           port 6379      │
+│      │                                               │
+│      └──────────► nas-settings                       │
+│                   (Flask, /nas-settings/*)            │
+│                   port 5000 internal                 │
+└──────────────────────────────────────────────────────┘
 ```
 
 ### seafile-caddy
 Image: `lucaslorentz/caddy-docker-proxy:2.12-alpine`
 
-Reads Docker labels off the `seafile` container (`caddy: https://seafile.designflow.app`) to configure routing automatically. Handles Let's Encrypt issuance and renewal — no manual cert management. TLS state persisted at `/opt/seafile-caddy/`.
+Reads Docker labels off sibling containers to configure routing automatically. Routes the root domain to `seafile` and `/nas-settings/*` to `nas-settings`. Handles Let's Encrypt issuance and renewal — no manual cert management. TLS state persisted at `/opt/seafile-caddy/`.
 
 ### seafile
 Image: `seafileltd/seafile-pro-mc:13.0-latest` (Docker Hub)
@@ -66,6 +70,33 @@ Image: `redis:latest`
 
 Seahub session cache. No persistence configured — acceptable for a cache. Restarts empty; sessions are re-established from the database.
 
+### nas-settings
+Image: `nas-settings:local` (built locally from `seafile-server/nas-settings/`)
+
+Flask app that exposes a settings UI for the NAS sync ingest window at `/nas-settings/`. Auth delegates to Seafile: the app calls Seafile's internal admin API on every request to verify the `sessionid` cookie belongs to a system admin — no separate credentials. Persists settings to a named Docker volume (`nas-settings-data`). Managed by `nas-settings.yml`, deployed separately from the main stack (not in `COMPOSE_FILE`).
+
+## NAS Sync Architecture
+
+Two seaf-cli containers run on the Synology NAS (`edgesynology1`), one per library. Each follows this flow on startup and hourly:
+
+```
+/source (NAS folder, read-only bind mount)
+    │
+    ▼ seaf-entrypoint.py
+    │  – filters files by mtime (SEAF_INGEST_DAYS)
+    │  – copies qualifying files to /library staging volume
+    │  – removes stale files from /library
+    ▼
+/library (Docker staging volume)
+    │
+    ▼ /home/seafile/entrypoint.py (upstream seaf-cli)
+    │  – seaf-daemon syncs /library to Seafile server
+    ▼
+Seafile → S3
+```
+
+`seaf-entrypoint.py` is downloaded from GitHub at each container start (not mounted from disk — a workaround for NAS MCP write restrictions). It reads per-library `ingest_days` from `https://seafile.designflow.app/nas-settings/api/settings` on startup and on each hourly refresh; if that fetch fails, it falls back to `SEAF_INGEST_DAYS` from the environment.
+
 ## Storage Architecture
 
 Seafile uses a content-addressable format (similar to Git) split across three logical stores:
@@ -78,16 +109,14 @@ Seafile uses a content-addressable format (similar to Git) split across three lo
 
 Seafile requires these to be **separate buckets** — it will refuse to start if two stores share a bucket. All three buckets are in Linode Object Storage `br-gru-1` (São Paulo), which minimises latency for Brazilian designers reading files.
 
-**Why separate buckets matter for recovery:** Each bucket type has a different access pattern and could theoretically be restored independently. Blocks contain actual file data; commits contain version history; fs contains current directory state.
-
 ## Directory Layout on VPS
 
 ```
 /opt/
 ├── seafile/                     Compose files, scripts, secrets
 │   ├── .env                     All runtime config and credentials
-│   ├── seafile-server.yml
-│   ├── caddy.yml
+│   ├── seafile-server.yml       Core stack (seafile, db, redis)
+│   ├── caddy.yml                Caddy reverse proxy
 │   └── CREDENTIALS.txt          All passwords, UUIDs (chmod 600, root only)
 │
 ├── seafile-data/                Mounted as /shared in seafile container
@@ -101,12 +130,17 @@ Seafile requires these to be **separate buckets** — it will refuse to start if
 │       │   └── gunicorn.conf.py
 │       ├── logs/
 │       ├── seafile-data/        Empty — file blocks go to S3, not here
-│       ├── seahub-data/         Avatars, thumbnails, static overrides
+│       ├── seahub-data/
+│       │   └── custom/
+│       │       └── templates/   Django template overrides (sysadmin nav injection)
 │       └── pro-data/            Pro feature state
 │
 ├── seafile-mysql/db/            MariaDB data files
 ├── seafile-caddy/               Caddy TLS certificates and ACME state
 └── backups/                     Daily SQL dumps (seafile-db-YYYYMMDD.sql)
+
+Docker volumes:
+  nas-settings-data              NAS settings panel persistent state (/data/settings.json)
 ```
 
 ## Networking
@@ -130,9 +164,7 @@ Tenant-locked to POP Creations (tenant ID `1caeb1c0-a087-4cb9-b046-a5e22404f971`
 ```
 Login page → email + password form → seahub_db lookup → session
 ```
-`albert@popcre.com` has a local password in CREDENTIALS.txt. Use this if SSO is unavailable. `nas-sync@popcre.com` is local-only (machine account). `u2giants@gmail.com` also has a local password (the initial admin password set during first start — see CREDENTIALS.txt).
-
-Authentication is M365 SSO (tenant-locked to POP Creations). `albert@popcre.com` and `u2giants@gmail.com` also have local passwords in CREDENTIALS.txt as a fallback.
+`albert@popcre.com` and `u2giants@gmail.com` have local passwords in CREDENTIALS.txt. Use these if SSO is unavailable. `nas-sync@popcre.com` is local-only (machine account, no SSO).
 
 ## Elasticsearch (not deployed)
 

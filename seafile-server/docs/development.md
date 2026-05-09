@@ -8,6 +8,7 @@ docker logs seafile          # Seafile app (startup, fatal errors)
 docker logs seafile-caddy    # TLS, routing
 docker logs seafile-mysql    # Database
 docker logs seafile-redis    # Cache
+docker logs nas-settings     # NAS settings panel (Flask startup, request errors)
 docker logs -f seafile       # Follow live
 ```
 
@@ -18,7 +19,7 @@ ls /opt/seafile-data/seafile/logs/
 
 | File | Contents |
 |------|----------|
-| `seahub.log` | Web UI requests and Django errors |
+| `seahub.log` | Web UI requests and Django errors — check here first for OAuth/login failures |
 | `seafile.log` | File sync daemon, S3 operations |
 | `seafevents.log` | Background jobs — includes expected Elasticsearch connection errors every 10m |
 | `seafile-monitor.log` | Process monitor output |
@@ -46,6 +47,10 @@ cat /opt/seafile-data/seafile-license.txt
 
 # seahub_settings.py syntax OK?
 docker exec seafile python3 -c "import ast; ast.parse(open('/shared/seafile/conf/seahub_settings.py').read()); print('OK')"
+
+# nas-settings panel responding?
+curl -sI https://seafile.designflow.app/nas-settings/   # should 302 to /oauth/login/ if not logged in
+curl -s https://seafile.designflow.app/nas-settings/api/settings | python3 -m json.tool
 ```
 
 ## Troubleshooting
@@ -58,19 +63,21 @@ docker exec seafile python3 -c "import ast; ast.parse(open('/shared/seafile/conf
 
 **Login fails with correct password** — Check `seahub_settings.py` for syntax errors (duplicate OAuth blocks, bad indentation). Run syntax check above. `docker restart seafile` after any fix.
 
-**M365 SSO not working** — `ENABLE_OAUTH = True` missing or seahub_settings.py has a syntax error. Check `OAUTH_ATTRIBUTE_MAP` — the `id` key must be optional (`False`) since Microsoft's OIDC endpoint returns `sub`, not `id`.
+**M365 SSO "Error, please contact administrator"** — Check `seahub.log` for the exact error. Most likely cause: `OAUTH_ATTRIBUTE_MAP` has `'id': (True, 'sub')` — the `id` key must be `(False, 'sub')` (optional) since Microsoft's OIDC endpoint returns `sub` but not `id`. See [configuration.md](configuration.md) for the correct value.
 
 **TLS certificate error** — DNS not resolved yet, or Let's Encrypt couldn't reach port 80. Check `docker logs seafile-caddy`.
 
 **Container keeps restarting** — `docker logs seafile 2>&1 | tail -30` — look at the lines immediately before each restart.
 
+**nas-settings redirects to login unexpectedly** — The panel calls `GET http://seafile:8000/api/v2.1/admin/sysinfo/` with the browser's `sessionid` cookie on every request to verify admin status. If that internal call fails (Seafile container down, network issue, non-admin session), access is denied. Check that the `seafile` container is healthy and the request carries a valid admin session cookie.
+
 ## Seafile API
 
-All management can be done via the REST API. Get a token first:
+Get a local-password token (use `albert@popcre.com` — `u2giants@gmail.com` may be SSO-only after first login):
 
 ```bash
 TOKEN=$(curl -s \
-  -d "username=u2giants@gmail.com&password=$(grep INIT_SEAFILE_ADMIN_PASSWORD /opt/seafile/.env | cut -d= -f2)" \
+  -d "username=albert@popcre.com&password=<password from CREDENTIALS.txt>" \
   https://seafile.designflow.app/api2/auth-token/ \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
 ```
@@ -96,18 +103,11 @@ curl -s -X PUT "https://seafile.designflow.app/api/v2.1/admin/users/<internal-em
 # List libraries
 curl -s "https://seafile.designflow.app/api/v2.1/admin/libraries/" \
   -H "Authorization: Token $TOKEN" | python3 -m json.tool
-
-# List all libraries for a user
-curl -s "https://seafile.designflow.app/api2/repos/" \
-  -H "Authorization: Token $USER_TOKEN"
 ```
 
 **API note on user emails:** Seafile internally assigns accounts a UUID-based email (`<hash>@auth.local`). The human email is stored as `contact_email`. When using the admin API to modify a user, use the internal email, not the contact email. Get it from the user list response.
 
 ## Managing Users
-
-### Add a user (admin panel)
-Admin Panel → Users → Add User → email, password, role: Default User.
 
 ### Designer onboarding via M365 SSO
 Send designers `https://seafile.designflow.app`. They click "Sign in with Microsoft" — account is auto-created on first login (must have a POP Creations M365 account in the tenant). Then share libraries via the web UI: open library → Share icon → Share to User → email → Read/Write.
@@ -115,4 +115,4 @@ Send designers `https://seafile.designflow.app`. They click "Sign in with Micros
 ### Admin panel
 https://seafile.designflow.app/sys/useradmin/
 
-Login: `u2giants@gmail.com` (SSO) or `albert@popcre.com` (password).
+Login: M365 SSO or `albert@popcre.com` (password).
