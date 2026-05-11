@@ -18,11 +18,12 @@
 #   These limit network throughput only, not the CPU hashing phase.
 #   Example: 10240 = 10 MB/s
 #
-# Resource limits (deploy.resources.limits):
-#   cpus  — cgroup quota; throttles gracefully, no errors or hangs
-#   memory — hard limit; OOMKill if exceeded (container restarts)
-#   Tune down if NAS becomes unresponsive during initial sync.
-#   Tune up if sync stalls for unusually long periods.
+# Resource limits:
+#   cpu_shares — soft CPU weight (default 1024; 512 = half priority under contention).
+#                NOTE: Synology kernel does not support CFS CPU quota (hard cpus limit).
+#                cpu_shares only throttles when the NAS is CPU-saturated, not always.
+#   memory     — hard limit; OOMKill if exceeded (container restarts cleanly).
+#                Tune up if OOMKills appear (check: docker events | grep oom).
 #
 # =================
 #
@@ -39,10 +40,10 @@ services:
     image: ghcr.io/u2giants/seafile:seaf-cli-latest
     container_name: seaf-cli-char-licensed
     restart: unless-stopped
+    cpu_shares: 512
     deploy:
       resources:
         limits:
-          cpus: '0.75'
           memory: 2g
     volumes:
       - /volume1/mac/Decor/Character Licensed:/source:ro
@@ -60,10 +61,10 @@ services:
     image: ghcr.io/u2giants/seafile:seaf-cli-latest
     container_name: seaf-cli-generic-decor
     restart: unless-stopped
+    cpu_shares: 512
     deploy:
       resources:
         limits:
-          cpus: '0.5'
           memory: 512m
     volumes:
       - /volume1/mac/Decor/Generic Decor:/source:ro
