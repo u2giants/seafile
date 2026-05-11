@@ -41,6 +41,40 @@ cd /home/ai/seafile-repo/seafile-server && docker compose -f nas-settings.yml bu
 
 **Note:** The build context in `nas-settings.yml` is `./nas-settings` (relative to the compose file). Run the build from the `seafile-server/` directory, not from `/opt/seafile/`.
 
+## NAS seaf-cli Containers
+
+The two seaf-cli containers on edgesynology1 use `ghcr.io/u2giants/seafile:seaf-cli-latest`. They are managed via the NAS MCP (not SSH). All docker commands must be base64-encoded — see AGENTS.md.
+
+### Release a code change to seaf-cli
+
+When `synology-seaf-cli/Dockerfile`, `entrypoint.py`, or `seaf-entrypoint.py` change:
+
+1. Commit to `main` — GitHub Actions builds and pushes the wrapper image automatically
+2. Wait for CI: https://github.com/u2giants/seafile/actions (workflow: `seaf-cli image`)
+3. Pull and recreate on edgesynology1 via NAS MCP:
+
+```bash
+# docker pull ghcr.io/u2giants/seafile:seaf-cli-latest
+CMD="docker pull ghcr.io/u2giants/seafile:seaf-cli-latest"
+echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
+
+# docker compose -f /tmp/seaf-cli-compose.yml up -d --force-recreate
+CMD="/var/packages/ContainerManager/target/usr/bin/docker compose -f /tmp/seaf-cli-compose.yml up -d --force-recreate"
+echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
+```
+
+### Release a compose-only change
+
+When only `synology-seaf-cli/docker-compose.yml` changes (environment, volumes — no image rebuild needed):
+
+1. Commit to `main` and push
+2. Write the updated compose file to `/tmp/seaf-cli-compose.yml` on edgesynology1 via NAS MCP (base64+tee)
+3. Recreate containers:
+```bash
+CMD="/var/packages/ContainerManager/target/usr/bin/docker compose -f /tmp/seaf-cli-compose.yml up -d"
+echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
+```
+
 ## First-Time Deployment
 
 Use `START_SEAFILE.sh` which runs pre-flight checks before starting:

@@ -53,6 +53,60 @@ curl -sI https://seafile.designflow.app/nas-settings/   # should 302 to /oauth/l
 curl -s https://seafile.designflow.app/nas-settings/api/settings | python3 -m json.tool
 ```
 
+## NAS seaf-cli Container Debugging
+
+All docker commands on edgesynology1 must be base64-encoded via NAS MCP (target: edgesynology1).
+
+```bash
+# Check container status (both containers)
+CMD="/var/packages/ContainerManager/target/usr/bin/docker ps --filter name=seaf-cli"
+echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
+
+# Tail logs from a container
+CMD="docker logs --tail 100 seaf-cli-char-licensed"
+echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
+
+# Check health check status
+CMD="docker inspect --format='{{.State.Health.Status}} {{.State.Health.FailingStreak}}' seaf-cli-char-licensed"
+echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
+
+# Check process tree inside a container (verify tini + seaf-daemon running)
+CMD="docker top seaf-cli-char-licensed"
+echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
+```
+
+### What healthy looks like
+
+Container `docker top` should show approximately:
+```
+tini
+  └── python3 /home/seafile/seaf-entrypoint.py   ← Stage 1 (alive, owns refresh thread)
+        └── python3 /home/seafile/entrypoint.py   ← Stage 2
+              └── seaf-daemon                      ← sync daemon
+```
+
+Log output should cycle through:
+```
+seaf-entrypoint  Ingest window: 730 days — N qualifying files
+seaf-entrypoint  Library ready — N files updated
+[upstream]       Monitoring seaf-daemon (PID N)
+[upstream]       synchronized
+```
+
+### What unhealthy looks like
+
+- `seaf-daemon` absent from `docker top` but container still running → watchdog hasn't fired yet (10s poll) or restart loop
+- Container restarting frequently → seaf-daemon dying; check network reachability to `seafile.designflow.app`
+- Health check `unhealthy` → RPC socket not responding; seaf-daemon may be starting up or crashed
+- No hourly refresh in logs → `seaf-entrypoint.py` exited before its refresh thread fired (shouldn't happen with current wrapper)
+
+### If a container is stuck or needs a forced restart
+
+```bash
+CMD="docker restart seaf-cli-char-licensed"
+echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
+```
+
 ## Troubleshooting
 
 **502 Bad Gateway** — Seafile is initialising. Normal for 3–5 minutes after first start. `docker logs -f seafile` and wait for "Seafile server started".

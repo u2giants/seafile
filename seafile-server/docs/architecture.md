@@ -77,25 +77,52 @@ Flask app that exposes a settings UI for the NAS sync ingest window at `/nas-set
 
 ## NAS Sync Architecture
 
-Two seaf-cli containers run on the Synology NAS (`edgesynology1`), one per library. Each follows this flow on startup and hourly:
+Two seaf-cli containers run on the Synology NAS (`edgesynology1`), one per library. The image is `ghcr.io/u2giants/seafile:seaf-cli-latest` — a wrapper built on `flrnnc/seafile-client` from this repo's `synology-seaf-cli/` directory.
+
+Each container follows this flow on startup and hourly:
 
 ```
-/source (NAS folder, read-only bind mount)
+/source (NAS bind mount, read-only)
     │
     ▼ seaf-entrypoint.py
     │  – filters files by mtime (SEAF_INGEST_DAYS)
     │  – copies qualifying files to /library staging volume
     │  – removes stale files from /library
+    │  – starts hourly refresh thread (kept alive by subprocess.run below)
     ▼
 /library (Docker staging volume)
     │
-    ▼ /home/seafile/entrypoint.py (upstream seaf-cli)
-    │  – seaf-daemon syncs /library to Seafile server
+    ▼ entrypoint.py (fixed version, baked into wrapper image)
+    │  – starts seaf-daemon
+    │  – syncs /library to Seafile server via seaf-cli
+    │  – watchdog loop: exits code 1 if seaf-daemon dies
     ▼
 Seafile → S3
 ```
 
-`seaf-entrypoint.py` is downloaded from GitHub at each container start (not mounted from disk — a workaround for NAS MCP write restrictions). It reads per-library `ingest_days` from `https://seafile.designflow.app/nas-settings/api/settings` on startup and on each hourly refresh; if that fetch fails, it falls back to `SEAF_INGEST_DAYS` from the environment.
+`seaf-entrypoint.py` reads per-library `ingest_days` from `https://seafile.designflow.app/nas-settings/api/settings` on startup and on each hourly refresh; falls back to `SEAF_INGEST_DAYS` from the environment if the fetch fails.
+
+### Process Supervision
+
+The wrapper image uses `tini` as PID 1, which reaps zombie processes and correctly forwards signals. The process hierarchy inside each container is:
+
+```
+tini (PID 1)
+  └── seaf-entrypoint.py
+        ├── refresh_loop thread (hourly re-populate /library)
+        └── entrypoint.py [subprocess]
+              └── seaf-daemon
+```
+
+**Why this matters:** Prior to this wrapper image, the upstream `flrnnc/seafile-client` had three confirmed bugs that caused silent failures in production:
+
+1. **Zombie seaf-daemon** — `seaf-cli start` made seaf-daemon a direct child of `entrypoint.py`. When seaf-daemon exited, `entrypoint.py` never called `waitpid()` (it was parked in `tail -f`), leaving a zombie process. The container stayed healthy from Docker's perspective. `tini` now reaps any zombies that get reparented to PID 1.
+
+2. **No restart on daemon death** — `entrypoint.py` used `follow()` which ran `tail -f logfile`. When seaf-daemon died, sync stopped silently. The fixed `entrypoint.py` uses a `watch()` loop that polls `seaf-daemon`'s PID every 10 seconds and calls `sys.exit(1)` when it dies, triggering Docker's `restart: unless-stopped` policy.
+
+3. **Healthcheck always reported healthy** — `healthcheck()` returned `None` (missing `return` statement), which `sys.exit(None)` treats as exit code 0. The fixed version returns `0 if healthy else 1`.
+
+**Why `seaf-entrypoint.py` uses `subprocess.run` instead of `os.execv`:** The original design used `os.execv` to hand off to `entrypoint.py`, which replaces the process image and kills all threads — including the hourly `refresh_loop` thread. With `os.execv`, the ingest window never slid forward between restarts. Using `subprocess.run` keeps `seaf-entrypoint.py` alive as the parent, so the refresh thread runs every hour as intended.
 
 ## Storage Architecture
 

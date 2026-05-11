@@ -17,14 +17,19 @@ seafile-server/               Linode VPS — live at seafile.designflow.app
 └── docs/
     ├── architecture.md       System design, containers, data flow, storage
     ├── configuration.md      All env vars, config files, and their meanings
-    ├── deployment.md         Start/stop, updates, backup, DNS
+    ├── deployment.md         Start/stop, updates, backup, DNS, NAS image releases
     └── development.md        Logs, debugging, API usage, user management
 
 synology-seaf-cli/            NYC Synology NAS — running on edgesynology1
+├── Dockerfile                Wrapper image built on flrnnc/seafile-client
+├── entrypoint.py             Fixed Seafile daemon entrypoint (replaces upstream default)
+├── seaf-entrypoint.py        Date-filter staging wrapper; launches entrypoint.py
 ├── docker-compose.yml        One seaf-cli container per library
-├── seaf-entrypoint.py        Staging wrapper (date filter + hourly refresh)
 ├── .env.example              NAS sync credentials template
 └── README.md                 Synology setup and redeploy instructions
+
+.github/workflows/
+└── seaf-cli-image.yml        Lint + build + push seaf-cli wrapper image to GHCR
 ```
 
 ## Live System
@@ -34,6 +39,7 @@ synology-seaf-cli/            NYC Synology NAS — running on edgesynology1
 | URL | https://seafile.designflow.app |
 | Server | Linode VPS · 172.233.14.233 · Ubuntu 24.04 |
 | Admin | albert@popcre.com via M365 SSO |
+| NAS sync image | `ghcr.io/u2giants/seafile:seaf-cli-latest` |
 | Credentials | `/opt/seafile/CREDENTIALS.txt` on the VPS (root-only, never in this repo) |
 | GitHub | https://github.com/u2giants/seafile |
 

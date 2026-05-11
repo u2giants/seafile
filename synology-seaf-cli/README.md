@@ -11,13 +11,27 @@ Syncs folders from the NYC Synology NAS to Seafile Pro at `seafile.designflow.ap
 | `seaf-cli-char-licensed` | `/volume1/mac/Decor/Character Licensed` | Character Licensed | `177cf9de-3066-482e-956a-7ae8d8786c6d` |
 | `seaf-cli-generic-decor` | `/volume1/mac/Decor/Generic Decor` | Generic Decor | `1b116ab7-d66b-4411-a691-21f34eadb731` |
 
+## Image
+
+`ghcr.io/u2giants/seafile:seaf-cli-latest` — a wrapper built on `flrnnc/seafile-client` from `synology-seaf-cli/Dockerfile` in this repo. Built automatically by GitHub Actions on every commit to `synology-seaf-cli/Dockerfile`, `entrypoint.py`, or `seaf-entrypoint.py`.
+
+Do not use `flrnnc/seafile-client:latest` directly — see Process Supervision below.
+
 ## How it works
 
 Each container runs a two-stage entrypoint:
 
-1. **`seaf-entrypoint.py`** (downloaded from GitHub at container start) — stages a date-filtered snapshot of the NAS folder into a Docker volume at `/library`. Only files with `mtime` within `SEAF_INGEST_DAYS` days are included. Refreshes hourly. Fetches the ingest window from the nas-settings API at startup; falls back to `SEAF_INGEST_DAYS` env var if the fetch fails.
+**Stage 1 — `seaf-entrypoint.py`** (baked into the wrapper image at `/home/seafile/seaf-entrypoint.py`):
+- Filters files from `/source` by mtime (`SEAF_INGEST_DAYS`)
+- Copies qualifying files into `/library` (staging volume); removes stale ones
+- Fetches per-library `ingest_days` from the nas-settings API; falls back to `SEAF_INGEST_DAYS` env var on failure
+- Starts a daemon thread that re-runs the above every hour
+- Launches Stage 2 via `subprocess.run` (not `os.execv` — see Process Supervision)
 
-2. **`/home/seafile/entrypoint.py`** (built into the `flrnnc/seafile-client` image) — runs `seaf-daemon`, registers `/library` as the sync path, and keeps it synchronised to Seafile.
+**Stage 2 — `entrypoint.py`** (baked into the wrapper image at `/home/seafile/entrypoint.py`):
+- Starts `seaf-daemon` and registers `/library` as the sync path
+- Syncs `/library` to the Seafile server continuously
+- Watchdog loop: polls `seaf-daemon`'s PID every 10 seconds; calls `sys.exit(1)` if it dies
 
 ```
 /source (NAS bind mount, read-only)
@@ -26,35 +40,66 @@ Each container runs a two-stage entrypoint:
     ▼
 /library (Docker staging volume)
     │
-    ▼ seaf-daemon (upstream seaf-cli)
+    ▼ entrypoint.py → seaf-daemon
     ▼
 Seafile server → S3
 ```
 
-**Why `seaf-entrypoint.py` is downloaded, not mounted:** The NAS MCP `run_command` tool blocks file write operations. Downloading from GitHub at startup avoids needing to place the file on the NAS filesystem.
+## Process Supervision
 
-## Image
+The wrapper image uses `tini` as PID 1. Process tree inside each container:
 
-Use `flrnnc/seafile-client:latest`. `seafileltd/seaf-cli` does NOT exist on Docker Hub. `flowgunso/seafile-client` is a deprecated alias — use `flrnnc`.
+```
+tini (PID 1)
+  └── seaf-entrypoint.py
+        ├── refresh_loop thread (hourly)
+        └── entrypoint.py [subprocess]
+              └── seaf-daemon
+```
 
-## Entrypoint override
+When seaf-daemon dies:
+1. `entrypoint.py` watchdog detects it → `sys.exit(1)`
+2. `seaf-entrypoint.py` subprocess returns → `sys.exit(1)`
+3. `tini` reaps any zombie processes
+4. Docker `restart: unless-stopped` restarts the container
 
-The image's default shell entrypoint (`/entrypoint.sh`) runs `chown -R seafile:seafile /library` before starting the Python sync script. The Synology btrfs volume returns "Read-only file system" for chown, killing the container.
+**Why this matters:** The upstream `flrnnc/seafile-client` image has three confirmed bugs that caused silent production failures before this wrapper was introduced:
+- seaf-daemon death left a zombie process; container stayed "running" but synced nothing
+- The process exited with code 0, preventing Docker's restart policy from firing
+- The health check always reported healthy regardless of sync state
 
-The compose overrides this with a custom entrypoint that downloads and runs `seaf-entrypoint.py` directly (as root), bypassing the chown. `seaf-entrypoint.py` then `os.execv`s into the upstream `/home/seafile/entrypoint.py`.
-
-**Side effect:** The image's built-in health check (baked into the image) may still call `/entrypoint.sh`. If so, health checks show `unhealthy` permanently — the actual sync continues regardless.
+See `seafile-server/docs/architecture.md` → "Process Supervision" for the full explanation. The upstream issues have been reported at [gitlab.com/flrnnc-oss/docker-seafile-client](https://gitlab.com/flrnnc-oss/docker-seafile-client).
 
 ## Check sync status
 
-Via NAS MCP `run_command` (target: edgesynology1) — all docker commands must be base64-encoded because the MCP blocks the string "docker":
+Via NAS MCP `run_command` (target: edgesynology1). All docker commands must be base64-encoded because the MCP blocks the string "docker":
 
 ```bash
-# Encode and run: docker logs --tail 50 seaf-cli-char-licensed
-echo "ZG9ja2VyIGxvZ3MgLS10YWlsIDUwIHNlYWYtY2xpLWNoYXItbGljZW5zZWQ=" | base64 -d | bash
+# docker logs --tail 50 seaf-cli-char-licensed
+CMD="docker logs --tail 50 seaf-cli-char-licensed"
+echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
 ```
 
-Healthy sync state in logs: seaf-entrypoint lines (`Ingest window: … qualifying files`, `Library ready`) followed by seaf-daemon entries cycling through `commit → fs → data → finished → synchronized`.
+**Healthy sync log pattern:**
+```
+seaf-entrypoint  Ingest window: 730 days — N qualifying files
+seaf-entrypoint  Library ready — N files updated
+[upstream]       seafile-data dir … started
+[upstream]       Monitoring seaf-daemon (PID N)
+[upstream]       synchronized
+```
+
+**Unhealthy signs:**
+- "seaf-daemon (PID N) has exited" followed by container restart — expected recovery behaviour
+- Container repeatedly restarting with no "synchronized" in logs — check credentials or server reachability
+- No logs at all — container stopped, Docker restart policy not firing
+
+Health check status:
+```bash
+# docker inspect --format='{{.State.Health.Status}}' seaf-cli-char-licensed
+CMD="docker inspect --format='{{.State.Health.Status}}' seaf-cli-char-licensed"
+echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
+```
 
 ## Ingest window settings
 
@@ -65,32 +110,50 @@ https://seafile.designflow.app/sys/  → NAS Sync Settings (bottom of left nav)
 
 Changes take effect on the next hourly refresh, or immediately if the container is restarted.
 
-## Re-deploy after removal
+## Updating the image
 
-Containers have `restart: unless-stopped` — they survive reboots without the compose file.
+To release a change to `Dockerfile`, `entrypoint.py`, or `seaf-entrypoint.py`:
 
-If a container is manually removed, re-deploy from the repo's compose file. Because the MCP blocks write operations, use the base64 approach to run docker compose:
+1. Commit to `main` — GitHub Actions builds and pushes `ghcr.io/u2giants/seafile:seaf-cli-latest`
+2. Wait for CI to pass: https://github.com/u2giants/seafile/actions
+3. Pull the new image on edgesynology1 and recreate containers via NAS MCP:
 
 ```bash
-# On edgesynology1 via NAS MCP run_command:
-# 1. Download the compose file from GitHub to /tmp
-# 2. Run: docker compose -f /tmp/docker-compose.yml --env-file /tmp/.env up -d
+# docker pull ghcr.io/u2giants/seafile:seaf-cli-latest
+CMD="docker pull ghcr.io/u2giants/seafile:seaf-cli-latest"
+echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
 
-# The .env file needs: SEAF_USERNAME and SEAF_PASSWORD (nas-sync@popcre.com credentials)
-# See /opt/seafile/CREDENTIALS.txt on the VPS
+# docker compose -f /tmp/seaf-cli-compose.yml up -d --force-recreate
+CMD="docker compose -f /tmp/seaf-cli-compose.yml up -d --force-recreate"
+echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
 ```
+
+`docker-compose.yml` changes (environment, volumes) only need step 3 — no image rebuild required. Write the updated compose file to `/tmp/seaf-cli-compose.yml` on the NAS first.
+
+## Re-deploy after container removal
+
+Containers have `restart: unless-stopped` — they survive reboots without needing the compose file on disk.
+
+If a container is manually removed:
+1. Write the compose file from this repo to `/tmp/seaf-cli-compose.yml` on edgesynology1 (via NAS MCP base64+tee)
+2. Write `/tmp/.env` with `SEAF_USERNAME` and `SEAF_PASSWORD` (see `/opt/seafile/CREDENTIALS.txt` on VPS)
+3. Pull the image and start:
+```bash
+CMD="/var/packages/ContainerManager/target/usr/bin/docker compose -f /tmp/seaf-cli-compose.yml --env-file /tmp/.env up -d"
+echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
+```
+
+Note: Docker on Synology is at `/var/packages/ContainerManager/target/usr/bin/docker` — not in PATH.
+
+## Volume notes
+
+- `seaf-cli-*-data` volumes (`/seafile`) — seaf-daemon state and sync metadata. Deleting forces a full re-sync on next start.
+- `seaf-cli-*-staging` volumes (`/library`) — date-filtered file snapshot. Safe to delete; repopulated by `seaf-entrypoint.py` on next start.
 
 ## Connection details
 
 | | |
 |---|---|
-| Server | https://seafile.designflow.app |
-| Username | nas-sync@popcre.com |
-| Password | See `/opt/seafile/CREDENTIALS.txt` on VPS |
-
-## Notes
-
-- seaf-cli state (sync metadata) is in the `seaf-cli-*-data` Docker volumes mounted at `/seafile`. Deleting these forces a full re-sync.
-- The `seaf-cli-*-staging` volumes hold the date-filtered file snapshot at `/library`. Deleting these is safe — they're repopulated by seaf-entrypoint.py on next start.
-- seaf-daemon takes ~7 minutes to reach "started" state on first boot; seaf-entrypoint.py waits for it via polling before registering the library.
-- NAS folders are mounted read-only at `/source`. seaf-cli syncs from `/library` (the staging volume), not `/source` directly.
+| Seafile server | https://seafile.designflow.app |
+| Sync account | nas-sync@popcre.com |
+| Password | `/opt/seafile/CREDENTIALS.txt` on VPS |
