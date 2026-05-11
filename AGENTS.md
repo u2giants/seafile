@@ -291,6 +291,12 @@ No large third-party packages are included in this repo. Nothing to ignore for A
 **Why:** `from __future__ import annotations` makes all annotations lazy strings at runtime, so the `|` syntax is never evaluated by the interpreter — backward compatible to Python 3.7.
 **Do not change because:** Removing it or adding new `X | Y` type hints without it will crash both files on startup on any Python < 3.10, including the base image.
 
+### seaf-cli containers have CPU and memory limits in docker-compose
+**Looks like:** Unnecessary constraints — just let the daemon use what it needs.
+**Actually:** seaf-daemon spikes to 200-300% CPU on every startup because it SHA1-hashes every file to build the initial block tree. With 467k files (char-licensed), this can make the NAS unusable for other services (RAID scrub, file sharing, ShareSync). `SEAF_UPLOAD_LIMIT`/`SEAF_DOWNLOAD_LIMIT` only throttle network, not hashing.
+**Why:** `deploy.resources.limits.cpus` uses cgroup quotas — graceful throttling, no errors or hangs. Memory limit prevents OOM impact on other services (OOMKill restarts the container cleanly via the watchdog).
+**Do not change because:** Without limits, a fresh sync of char-licensed (467k files) degrades the NAS for hours. Current values: char-licensed cpus=0.75/memory=2g, generic-decor cpus=0.5/memory=512m. Tune memory up if OOMKills appear in Docker events.
+
 ---
 
 ## Credentials and Environment

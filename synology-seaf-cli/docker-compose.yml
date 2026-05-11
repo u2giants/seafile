@@ -4,14 +4,25 @@
 #
 # === Settings ===
 #
-# SEAF_INGEST_DAYS   Only upload files modified within this many days.
-#                    Set per-library in the environment blocks below.
-#                    Remove the line (or leave blank) to upload all files.
+# SEAF_INGEST_DAYS     Only upload files modified within this many days.
+#                      Set per-library in the environment blocks below.
+#                      Remove the line (or leave blank) to upload all files.
 #
 #   Examples:
 #     - SEAF_INGEST_DAYS=365    # 1 year
 #     - SEAF_INGEST_DAYS=730    # 2 years
 #     - SEAF_INGEST_DAYS=1825   # 5 years
+#
+# SEAF_UPLOAD_LIMIT    Max upload speed in KB/s (optional).
+# SEAF_DOWNLOAD_LIMIT  Max download speed in KB/s (optional).
+#   These limit network throughput only, not the CPU hashing phase.
+#   Example: 10240 = 10 MB/s
+#
+# Resource limits (deploy.resources.limits):
+#   cpus  — cgroup quota; throttles gracefully, no errors or hangs
+#   memory — hard limit; OOMKill if exceeded (container restarts)
+#   Tune down if NAS becomes unresponsive during initial sync.
+#   Tune up if sync stalls for unusually long periods.
 #
 # =================
 #
@@ -28,6 +39,11 @@ services:
     image: ghcr.io/u2giants/seafile:seaf-cli-latest
     container_name: seaf-cli-char-licensed
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.75'
+          memory: 2g
     volumes:
       - /volume1/mac/Decor/Character Licensed:/source:ro
       - seaf-cli-char-licensed-staging:/library
@@ -44,6 +60,11 @@ services:
     image: ghcr.io/u2giants/seafile:seaf-cli-latest
     container_name: seaf-cli-generic-decor
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512m
     volumes:
       - /volume1/mac/Decor/Generic Decor:/source:ro
       - seaf-cli-generic-decor-staging:/library
