@@ -1,0 +1,44 @@
+name: seaf-cli image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - synology-seaf-cli/Dockerfile
+      - synology-seaf-cli/entrypoint.py
+      - synology-seaf-cli/seaf-entrypoint.py
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pyflakes
+      - run: |
+          python -m pyflakes synology-seaf-cli/entrypoint.py
+          python -m pyflakes synology-seaf-cli/seaf-entrypoint.py
+
+  build-push:
+    needs: lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: synology-seaf-cli
+          push: true
+          tags: ghcr.io/u2giants/seafile:seaf-cli-latest
