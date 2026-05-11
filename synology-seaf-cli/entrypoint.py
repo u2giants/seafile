@@ -167,6 +167,12 @@ class Client:
                 sys.exit(1)
             self._wait_for_path(self.ini, "seafile.ini", INIT_TIMEOUT)
 
+        # Remove stale PID/socket left by a previous container (same volume, new PID
+        # namespace) — seaf-cli start checks the PID file and exits 1 if that PID
+        # currently exists (even if it's an unrelated process in the new namespace).
+        for stale in [self.seafile / "seafile-data" / "seafile.pid", self.socket]:
+            stale.unlink(missing_ok=True)
+
         logger.info("Starting `seaf-cli`.")
         result = subprocess.run(self.binary + ["start"])
         if result.returncode != 0:
