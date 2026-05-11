@@ -279,6 +279,18 @@ No large third-party packages are included in this repo. Nothing to ignore for A
 **Why:** tini is a minimal init (~20KB) that reaps orphaned zombie processes and correctly forwards signals to its child tree. Standard pattern for containerized daemons.
 **Do not change because:** Removing tini reintroduces zombie accumulation and broken signal handling on container stop/restart.
 
+### entrypoint.py clears stale PID and socket before seaf-cli start
+**Looks like:** Unnecessary file deletion — seafile should handle its own state.
+**Actually:** `seaf-cli start` reads `seafile.pid` from the persistent `/seafile` volume and checks whether that PID is currently alive. After `docker compose --force-recreate`, the data volume carries over the old container's PID file. In the new container's PID namespace, that PID may belong to a live unrelated process (tini, python). seaf-cli sees it as "already running" and exits 1, crashing the container in a restart loop.
+**Why:** Deleting the stale PID and socket files in `initialize()` before calling `seaf-cli start` makes the start idempotent on container recreation.
+**Do not change because:** Removing the cleanup reintroduces the restart loop whenever `--force-recreate` is used (e.g. for image updates). The bug is subtle — the container crashes immediately with no obvious error unless you can read Docker logs.
+
+### entrypoint.py and seaf-entrypoint.py use `from __future__ import annotations`
+**Looks like:** An unnecessary import — Python type hints work fine without it.
+**Actually:** `str | None` and `int | None` union syntax in function signatures requires Python 3.10+. The `flrnnc/seafile-client` base image ships an older Python (confirmed 3.9 or earlier). Without `from __future__ import annotations`, the files crash at import time with `TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'`.
+**Why:** `from __future__ import annotations` makes all annotations lazy strings at runtime, so the `|` syntax is never evaluated by the interpreter — backward compatible to Python 3.7.
+**Do not change because:** Removing it or adding new `X | Y` type hints without it will crash both files on startup on any Python < 3.10, including the base image.
+
 ---
 
 ## Credentials and Environment
