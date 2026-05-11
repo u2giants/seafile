@@ -1,0 +1,85 @@
+# Windows workstation — Seafile seaf-cli upload containers
+# Runs on the Windows rendering machine alongside the PopDAM Windows Agent.
+# Sources are mounted from the NAS via CIFS (SMB) over the local network.
+#
+# This is a parallel deployment to synology-seaf-cli/ — run one OR the other,
+# not both. See README.md for the cutover procedure.
+#
+# === Settings ===
+#
+# All settings identical to synology-seaf-cli/docker-compose.yml except:
+#   - Source volumes use CIFS mounts (NAS SMB) instead of local bind mounts
+#   - NAS_USERNAME / NAS_PASSWORD added to .env (see README.md)
+#
+# If "edgesynology1" doesn't resolve, replace with the NAS IP address
+# in the two volume device lines below.
+#
+# =================
+
+name: seaf-cli
+
+services:
+
+  seaf-cli-char-licensed:
+    image: ghcr.io/u2giants/seafile:seaf-cli-latest
+    container_name: seaf-cli-char-licensed
+    restart: unless-stopped
+    cpu_shares: 512
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+    volumes:
+      - char-licensed-source:/source:ro
+      - seaf-cli-char-licensed-staging:/library
+      - seaf-cli-char-licensed-data:/seafile
+    environment:
+      - SEAF_SERVER_URL=https://seafile.designflow.app
+      - SEAF_USERNAME
+      - SEAF_PASSWORD
+      - SEAF_LIBRARY=177cf9de-3066-482e-956a-7ae8d8786c6d
+      - SEAF_INGEST_DAYS=730
+      - SEAF_SETTINGS_URL=https://seafile.designflow.app/nas-settings/api/settings
+
+  seaf-cli-generic-decor:
+    image: ghcr.io/u2giants/seafile:seaf-cli-latest
+    container_name: seaf-cli-generic-decor
+    restart: unless-stopped
+    cpu_shares: 512
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    volumes:
+      - generic-decor-source:/source:ro
+      - seaf-cli-generic-decor-staging:/library
+      - seaf-cli-generic-decor-data:/seafile
+    environment:
+      - SEAF_SERVER_URL=https://seafile.designflow.app
+      - SEAF_USERNAME
+      - SEAF_PASSWORD
+      - SEAF_LIBRARY=1b116ab7-d66b-4411-a691-21f34eadb731
+      - SEAF_INGEST_DAYS=730
+      - SEAF_SETTINGS_URL=https://seafile.designflow.app/nas-settings/api/settings
+
+volumes:
+  char-licensed-source:
+    driver: local
+    driver_opts:
+      type: cifs
+      device: "//edgesynology1/mac/Decor/Character Licensed"
+      o: "username=${NAS_USERNAME},password=${NAS_PASSWORD},vers=3.0,dir_mode=0755,file_mode=0644"
+  generic-decor-source:
+    driver: local
+    driver_opts:
+      type: cifs
+      device: "//edgesynology1/mac/Decor/Generic Decor"
+      o: "username=${NAS_USERNAME},password=${NAS_PASSWORD},vers=3.0,dir_mode=0755,file_mode=0644"
+  seaf-cli-char-licensed-data:
+    name: seaf-cli-char-licensed-data
+  seaf-cli-char-licensed-staging:
+    name: seaf-cli-char-licensed-staging
+  seaf-cli-generic-decor-data:
+    name: seaf-cli-generic-decor-data
+  seaf-cli-generic-decor-staging:
+    name: seaf-cli-generic-decor-staging

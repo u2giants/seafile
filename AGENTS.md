@@ -48,13 +48,18 @@ seafile-repo/                    Root — GitHub: github.com/u2giants/seafile
 │       ├── deployment.md        Start/stop, updates, backup, remaining work
 │       └── development.md       Logs, debugging, API usage, user management
 │
-└── synology-seaf-cli/           NAS sync containers — deployed on edgesynology1
-    ├── Dockerfile               Wrapper image — adds tini, fixed entrypoint.py
-    ├── entrypoint.py            Fixed Seafile daemon entrypoint (replaces image default)
-    ├── seaf-entrypoint.py       Date-filter staging wrapper; launches entrypoint.py
-    ├── docker-compose.yml       One service per Seafile library
-    ├── .env.example             NAS sync password template
-    └── README.md                Synology setup instructions
+├── synology-seaf-cli/           NAS sync containers — deployed on edgesynology1
+│   ├── Dockerfile               Wrapper image — adds tini, fixed entrypoint.py
+│   ├── entrypoint.py            Fixed Seafile daemon entrypoint (replaces image default)
+│   ├── seaf-entrypoint.py       Date-filter staging wrapper; launches entrypoint.py
+│   ├── docker-compose.yml       One service per Seafile library
+│   ├── .env.example             NAS sync password template
+│   └── README.md                Synology setup instructions
+│
+└── windows-workstation/         Windows rendering machine — seaf-cli + PopDAM agent
+    ├── docker-compose.yml       seaf-cli containers (sources via CIFS from NAS)
+    ├── setup.ps1                One-shot installer: PopDAM agent + Docker + seaf-cli
+    └── README.md                Machine replacement instructions for Albert
 ```
 
 All files in this repo are **authored by this project** — there are no third-party packages or vendor directories to avoid modifying.
@@ -102,6 +107,13 @@ This project is original infrastructure config (not a fork). No upstream files h
 - Use Cloudflare API with `CF_TOKEN` (from Albert)
 - Never enable proxy (orange cloud) on `seafile.designflow.app` — see Idiosyncratic Decisions
 
+### If you need to set up or replace the Windows rendering machine:
+- Run `windows-workstation/setup.ps1` as Administrator on the target machine
+- It installs PopDAM Windows Agent (from GitHub releases) + seaf-cli containers (Docker)
+- If switching from NAS to Windows: stop NAS containers first (`docker compose stop` on edgesynology1) — never run both simultaneously
+- If seaf-cli has never run on that Windows machine before, Docker will SHA1-hash all files on first start — expect 200-300% CPU for several hours
+- NAS credentials: a local Synology user with read access to the `mac` share is needed; see README.md for which account to use
+
 ### If you need to add a designer user:
 - Send them `https://seafile.designflow.app` — they sign in with Google SSO; account auto-creates
 - Then share libraries via web UI: open library → Share → Share to User → Read/Write
@@ -118,7 +130,7 @@ This project is original infrastructure config (not a fork). No upstream files h
 
 | Task | File to touch |
 |------|--------------|
-| Add/modify seaf-cli sync container | `synology-seaf-cli/docker-compose.yml` |
+| Add/modify seaf-cli sync container | `synology-seaf-cli/docker-compose.yml` (NAS) or `windows-workstation/docker-compose.yml` (Windows) |
 | Change Seafile/MariaDB/Redis container config | `seafile-server/seafile-server.yml` |
 | Change reverse proxy (TLS, routing) | `seafile-server/caddy.yml` |
 | Change environment variables | `/opt/seafile/.env` on VPS (then update `.env.example` + docs) |
@@ -170,12 +182,21 @@ These containers are defined by the upstream Seafile Docker Compose. Their names
 
 ### NAS Containers (edgesynology1 — 192.168.3.100)
 
-These follow the standard naming convention.
+These follow the standard naming convention. Only run these OR the Windows containers — not both.
 
 | Container name | NAS path | Seafile library | UUID | Status |
 |---------------|----------|----------------|------|--------|
 | `seaf-cli-char-licensed` | `/volume1/mac/Decor/Character Licensed` | Character Licensed | `177cf9de-3066-482e-956a-7ae8d8786c6d` | ✅ Running |
 | `seaf-cli-generic-decor` | `/volume1/mac/Decor/Generic Decor` | Generic Decor | `1b116ab7-d66b-4411-a691-21f34eadb731` | ✅ Running |
+
+### Windows Workstation Containers (alternative deployment — not yet active)
+
+Defined in `windows-workstation/docker-compose.yml`. Same containers, same image, same libraries — sources mounted via CIFS from the NAS over LAN instead of local bind mounts. To activate: stop NAS containers, run `setup.ps1` on the Windows machine.
+
+| Container name | Source (CIFS) | Seafile library | UUID |
+|---------------|---------------|----------------|------|
+| `seaf-cli-char-licensed` | `//edgesynology1/mac/Decor/Character Licensed` | Character Licensed | `177cf9de-3066-482e-956a-7ae8d8786c6d` |
+| `seaf-cli-generic-decor` | `//edgesynology1/mac/Decor/Generic Decor` | Generic Decor | `1b116ab7-d66b-4411-a691-21f34eadb731` |
 
 There is no Coolify for this project. Containers are managed directly via Docker on the Linode VPS.
 
@@ -294,8 +315,14 @@ No large third-party packages are included in this repo. Nothing to ignore for A
 ### seaf-cli containers have CPU and memory limits in docker-compose
 **Looks like:** Unnecessary constraints — just let the daemon use what it needs.
 **Actually:** seaf-daemon spikes to 200-300% CPU on every startup because it SHA1-hashes every file to build the initial block tree. With 467k files (char-licensed), this can make the NAS unusable for other services (RAID scrub, file sharing, ShareSync). `SEAF_UPLOAD_LIMIT`/`SEAF_DOWNLOAD_LIMIT` only throttle network, not hashing.
-**Why:** `deploy.resources.limits.cpus` uses cgroup quotas — graceful throttling, no errors or hangs. Memory limit prevents OOM impact on other services (OOMKill restarts the container cleanly via the watchdog).
-**Do not change because:** Without limits, a fresh sync of char-licensed (467k files) degrades the NAS for hours. Current values: char-licensed cpus=0.75/memory=2g, generic-decor cpus=0.5/memory=512m. Tune memory up if OOMKills appear in Docker events.
+**Why:** `cpu_shares: 512` is a soft scheduling weight (half of default 1024) — Docker only throttles under CPU contention, not always. Memory limits are hard (OOMKill, container restarts cleanly via watchdog). Hard `cpus` limits were tried first but Synology's kernel does not support CFS CPU quota cgroups and returns "NanoCPUs can not be set". `cpu_shares` is the only CPU limit that works on Synology.
+**Do not change because:** Without limits, a fresh sync of char-licensed (467k files) degrades the NAS for hours. Do not replace `cpu_shares` with `cpus` — it will fail on Synology. Tune memory up if OOMKills appear in Docker events. Current values: both containers `cpu_shares: 512`, char-licensed `memory: 2g`, generic-decor `memory: 512m`.
+
+### windows-workstation uses CIFS named volumes, not bind mounts, for sources
+**Looks like:** Should just mount the NAS share as a bind mount like on the NAS.
+**Actually:** Bind mounts from Windows paths into Docker Desktop containers are unreliable for UNC paths (`\\server\share`). CIFS named volumes (`driver: local`, `type: cifs`) mount the SMB share from inside Docker's Linux VM (WSL2) using the kernel's CIFS stack — well-supported and the standard pattern for NAS-to-Docker-Desktop workflows.
+**Why:** Docker Desktop on Windows uses WSL2 (a Linux VM). Bind mounts work for local Windows paths but not for SMB paths. The CIFS volume driver mounts from inside that Linux VM, which can reach the NAS over the local network.
+**Do not change because:** If seaf-cli on the Windows machine can't reach the source files, it will simply sync an empty directory to Seafile — silently deleting the library. Always verify containers are healthy after deploy. If `edgesynology1` doesn't resolve from inside Docker, use the NAS IP address in the device paths.
 
 ---
 
@@ -376,6 +403,7 @@ No incidents recorded. Add here if a disaster or near-miss occurs: what happened
 
 ## Pending Work
 
-- [ ] **Designer user accounts (8 people)** — São Paulo designers not yet onboarded. Send them `https://seafile.designflow.app`; they sign in with Google SSO; accounts auto-create. Then share Character Licensed and Generic Decor libraries with each at Read/Write.
+- [ ] **Windows workstation cutover** — `windows-workstation/setup.ps1` is ready. To activate: (1) confirm Docker Desktop is installed on the Windows rendering machine, (2) run `setup.ps1` as Administrator, (3) verify containers healthy, (4) stop NAS seaf-cli containers. See `windows-workstation/README.md`.
+- [ ] **Designer user accounts (8 people)** — São Paulo designers not yet onboarded. Send them `https://seafile.designflow.app`; they sign in with M365 SSO; accounts auto-create. Then share Character Licensed and Generic Decor libraries with each at Read/Write.
 - [ ] **Delete HANDOFF.md** — once designer accounts are done.
 - [ ] **Elasticsearch** — optional, not blocking. Requires server upgrade or RAM headroom. `vm.max_map_count` is already set.
