@@ -16,6 +16,10 @@ This session diagnosed and fixed critical process management bugs in the Synolog
   - `tini` as PID 1 (zombie reaping, signal forwarding)
   - Fixed `entrypoint.py` (watchdog loop, correct healthcheck exit codes, SIGTERM handler, timeouts, no shell injection, credentials redacted from debug logs)
   - Fixed `seaf-entrypoint.py` (`subprocess.run` instead of `os.execv` so the hourly refresh thread survives)
+  - Stale PID/socket cleanup before `seaf-cli start` (needed on `--force-recreate`: old container's PID maps to a live process in the new PID namespace, causing `seaf-cli start` to exit 1)
+  - `from __future__ import annotations` in both Python files (the `str | None` / `int | None` union syntax requires Python 3.10+; flrnnc base image runs an older Python)
+
+- **NAS containers deployed and verified** — both `seaf-cli-char-licensed` and `seaf-cli-generic-decor` on edgesynology1 are running `ghcr.io/u2giants/seafile:seaf-cli-latest` with status `healthy` as of 2026-05-11. Credentials at `/tmp/.env` on NAS (not persistent across NAS reboots — see re-deploy instructions in `synology-seaf-cli/README.md`).
 
 - **GitHub Actions workflow** — `.github/workflows/seaf-cli-image.yml` — triggers on changes to `synology-seaf-cli/Dockerfile`, `entrypoint.py`, or `seaf-entrypoint.py`; runs pyflakes lint then builds and pushes to GHCR
 
@@ -27,30 +31,7 @@ This session diagnosed and fixed critical process management bugs in the Synolog
 
 - **Upstream issues prepared** — three ready-to-paste GitLab issue files in `/home/ai/seafile-client-fix/` on the VPS
 
-## What is NOT done yet — must be done before the fix is live
-
-### 1. NAS containers must be restarted with the new image (CRITICAL)
-
-The new `docker-compose.yml` is committed and the image is published, but the containers on edgesynology1 are still running the OLD configuration (`flrnnc/seafile-client` with the inline entrypoint download). All the bugs are still present in the live containers until this step is done.
-
-The exact steps via NAS MCP (target: edgesynology1):
-
-**Step A — write the updated compose file to /tmp:**
-Use NAS MCP `run_command` with base64-encoded tee command to write the current `synology-seaf-cli/docker-compose.yml` from this repo to `/tmp/seaf-cli-compose.yml` on the NAS. (The compose file is at `https://raw.githubusercontent.com/u2giants/seafile/main/synology-seaf-cli/docker-compose.yml`)
-
-**Step B — pull the new image:**
-```bash
-CMD="/var/packages/ContainerManager/target/usr/bin/docker pull ghcr.io/u2giants/seafile:seaf-cli-latest"
-```
-
-**Step C — recreate both containers:**
-```bash
-CMD="/var/packages/ContainerManager/target/usr/bin/docker compose -f /tmp/seaf-cli-compose.yml --env-file /tmp/.env up -d --force-recreate"
-```
-(Ensure `/tmp/.env` exists with `SEAF_USERNAME` and `SEAF_PASSWORD` — credentials in `/opt/seafile/CREDENTIALS.txt` on VPS)
-
-**Step D — verify:**
-Check `docker top seaf-cli-char-licensed` shows `tini → seaf-entrypoint.py → entrypoint.py → seaf-daemon`. Check `docker inspect --format='{{.State.Health.Status}}' seaf-cli-char-licensed` shows `healthy`.
+## What is NOT done yet
 
 ### 2. File the three GitLab upstream issues
 
@@ -72,6 +53,16 @@ Go to https://gitlab.com/flrnnc-oss/docker-seafile-client/-/issues/new. Use the 
 - **`sys.exit(result.returncode)` not `sys.exit(1)` from seaf-entrypoint.py** — `restart: unless-stopped` restarts on any exit including 0, so the exit code doesn't matter for restart behavior.
 - **Single atomic git commit for all code + docs** — avoids a state where compose references an image that hasn't built yet.
 - **GitHub `workflow` scope added separately** — the initial commit token lacked the `workflow` OAuth scope needed to push to `.github/workflows/`. Required `gh auth refresh -s workflow` using device code flow (browser auth from another machine).
+
+## Bugs found during the first production deploy (2026-05-11)
+
+Two additional bugs surfaced that were not caught in the image build:
+
+1. **Stale PID/socket on `--force-recreate`** — `seaf-cli start` reads `seafile.pid` from the persistent `/seafile` volume. In a new container's PID namespace, the old PID may belong to a live process (tini, python). seaf-cli sees it as "already running" and exits 1. Fixed in `entrypoint.py` `initialize()`: delete stale pid and sock files before calling `seaf-cli start`.
+
+2. **Python 3.10 union type syntax** — `str | None` and `int | None` in function signatures require Python 3.10+. The flrnnc base image uses an older Python. Fixed with `from __future__ import annotations` at the top of both files, which makes all annotations lazy strings at runtime.
+
+Neither bug would have appeared in a test environment using Python 3.10+. Future changes to these files should be tested with `python3 --version` matching the base image.
 
 ## Dead ends / approaches abandoned
 
