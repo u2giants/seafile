@@ -22,6 +22,8 @@ import json
 import logging
 import os
 import shutil
+import subprocess
+import sys
 import threading
 import time
 import urllib.request
@@ -123,6 +125,7 @@ def populate(days=None):
 
 
 def refresh_loop(env_days, settings_url, library_uuid):
+    # subprocess.run (not os.execv) keeps this process alive so the thread survives
     def _run():
         while True:
             time.sleep(3600)
@@ -145,4 +148,7 @@ if __name__ == '__main__':
     days = resolve_ingest_days(env_days, settings_url, library_uuid)
     populate(days)
     refresh_loop(env_days, settings_url, library_uuid)
-    os.execv(UPSTREAM, [UPSTREAM])
+    # Use subprocess.run instead of os.execv so the refresh_loop thread above
+    # keeps running hourly. os.execv would replace this process and kill the thread.
+    result = subprocess.run([sys.executable, UPSTREAM])
+    sys.exit(result.returncode)

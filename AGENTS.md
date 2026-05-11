@@ -49,6 +49,9 @@ seafile-repo/                    Root — GitHub: github.com/u2giants/seafile
 │       └── development.md       Logs, debugging, API usage, user management
 │
 └── synology-seaf-cli/           NAS sync containers — deployed on edgesynology1
+    ├── Dockerfile               Wrapper image — adds tini, fixed entrypoint.py
+    ├── entrypoint.py            Fixed Seafile daemon entrypoint (replaces image default)
+    ├── seaf-entrypoint.py       Date-filter staging wrapper; launches entrypoint.py
     ├── docker-compose.yml       One service per Seafile library
     ├── .env.example             NAS sync password template
     └── README.md                Synology setup instructions
@@ -204,11 +207,11 @@ No large third-party packages are included in this repo. Nothing to ignore for A
 **Why:** The script appends rather than upserts — no idempotency check.
 **Do not change because:** The OAuth config is already live and working. If OAuth settings need changing, edit `seahub_settings.py` directly.
 
-### seaf-cli image is flrnnc/seafile-client, not seafileltd/seaf-cli
-**Looks like:** Using a random community image instead of the official one.
-**Actually:** `seafileltd/seaf-cli` does not exist on Docker Hub or docker.seadrive.org. `flrnnc/seafile-client` (formerly `flowgunso/seafile-client`) is the established community image with 46k+ pulls.
-**Why:** Seafile does not publish an official seaf-cli Docker image.
-**Do not change because:** This is the only working image. `flowgunso` is a deprecated alias for `flrnnc` — always use `flrnnc`.
+### seaf-cli containers use a wrapper image built on flrnnc/seafile-client
+**Looks like:** The image `ghcr.io/u2giants/seafile:seaf-cli-latest` is not the official seaf-cli image.
+**Actually:** `seafileltd/seaf-cli` does not exist. `flrnnc/seafile-client` is the community standard (46k+ pulls, formerly `flowgunso/seafile-client`). Our wrapper builds FROM that image and layers in: tini as PID 1, a fixed `entrypoint.py` (daemon watchdog, correct healthcheck exit codes, SIGTERM handler, subprocess return codes checked), and our `seaf-entrypoint.py` as the primary entrypoint. Built automatically via GitHub Actions on every commit to the relevant files.
+**Why:** Upstream `flrnnc/seafile-client` has confirmed bugs: healthcheck always exits 0 (never reports unhealthy), seaf-daemon becomes a zombie with no detection or restart, and `follow()` exits code 0 preventing Docker's restart policy from firing. Issues filed upstream; wrapper image is the production fix.
+**Do not change because:** Switching back to `flrnnc/seafile-client:latest` directly reintroduces all three bugs. The wrapper image is required.
 
 ### NAS source mounts to /source; /library is a Docker staging volume
 **Looks like:** The NAS folder should mount directly to `/library`.
@@ -254,15 +257,27 @@ No large third-party packages are included in this repo. Nothing to ignore for A
 
 ### seaf-cli compose file is deployed from /tmp on the NAS
 **Looks like:** The compose file will be lost on reboot.
-**Actually:** The container has `restart: unless-stopped` — Docker restores it automatically after reboot without needing the compose file. The compose file is only needed for initial deploy or if the container is manually removed. The `seaf-entrypoint.py` wrapper is downloaded fresh from GitHub at each container start (not mounted from the NAS filesystem), so no persistent NAS path is required for it either.
+**Actually:** The container has `restart: unless-stopped` — Docker restores it automatically after reboot without needing the compose file. The compose file is only needed for initial deploy or if the container is manually removed.
 **Why:** The NAS MCP `run_command` tool blocks `mkdir` and write redirection operators. Files must be written via tee, and `/tmp` is the most reliable writable path.
-**Do not change because:** This is a workaround for MCP write restrictions. If the container is ever manually removed: re-write the compose file from this repo and re-run `docker-compose up -d`.
+**Do not change because:** This is a workaround for MCP write restrictions. If the container is ever manually removed: re-write the compose file from this repo and re-run `docker compose up -d`.
 
 ### SEAF_INGEST_DAYS controls the per-library upload window
 **Looks like:** An undocumented environment variable.
 **Actually:** Set in `docker-compose.yml` under each service's `environment:` block. Tells the `seaf-entrypoint.py` wrapper to only include files whose mtime is within the last N days. Refreshes every hour so newly-modified files enter the window automatically.
 **Why:** POP Creations designers only need recent assets; uploading the entire 28TB library to S3 would be expensive and slow.
 **Do not change because:** Lowering the value removes files from Seafile (seaf-cli sees them disappear from /library). Raising it adds them back. Removing the line entirely syncs all files.
+
+### seaf-entrypoint.py uses subprocess.run to launch entrypoint.py, not os.execv
+**Looks like:** An unnecessary subprocess where exec would be simpler.
+**Actually:** The original design used `os.execv` which replaces the process image and kills all threads — including the `refresh_loop` thread. With `os.execv`, the ingest window never slid forward between restarts; the hourly refresh silently never ran.
+**Why:** `subprocess.run` keeps seaf-entrypoint.py alive as the parent process so the refresh thread runs every hour as intended.
+**Do not change because:** Reverting to `os.execv` breaks the hourly file refresh without any warning. Files modified within `SEAF_INGEST_DAYS` but after the last restart would not be picked up until the next container restart.
+
+### tini is PID 1 in seaf-cli containers
+**Looks like:** An unnecessary layer — just run the Python entrypoint directly.
+**Actually:** Without a proper init, zombie processes (defunct seaf-daemon after unexpected exit) accumulate and SIGTERM from `docker stop` is not forwarded to child processes.
+**Why:** tini is a minimal init (~20KB) that reaps orphaned zombie processes and correctly forwards signals to its child tree. Standard pattern for containerized daemons.
+**Do not change because:** Removing tini reintroduces zombie accumulation and broken signal handling on container stop/restart.
 
 ---
 
@@ -318,11 +333,17 @@ This is a **config-only repo** — there is no Docker image to build and push. T
 4. Apply changes: restart affected containers or apply config changes manually
 5. Verify with `docker compose -f /opt/seafile/seafile-server.yml -f /opt/seafile/caddy.yml ps`
 
-**NAS changes (synology-seaf-cli/):**
+**NAS image changes (synology-seaf-cli/Dockerfile, entrypoint.py, seaf-entrypoint.py):**
+1. Edit the relevant file in this repo
+2. Commit to `main` and push
+3. GitHub Actions (`seaf-cli image` workflow) builds and pushes `ghcr.io/u2giants/seafile:seaf-cli-latest`
+4. After CI succeeds: pull the new image on the NAS and recreate containers (via NAS MCP base64 commands)
+
+**NAS compose changes (synology-seaf-cli/docker-compose.yml):**
 1. Edit `synology-seaf-cli/docker-compose.yml` in this repo
 2. Commit and push
 3. Write the updated compose file to `/tmp/seaf-cli-compose.yml` on edgesynology1 via NAS MCP (base64+tee)
-4. Run `docker-compose -f /tmp/seaf-cli-compose.yml up -d` (via base64-encoded NAS MCP command)
+4. Run `docker compose -f /tmp/seaf-cli-compose.yml up -d` (via base64-encoded NAS MCP command)
 
 **VPS access:** Claude Code runs on the VPS as `ai` user with passwordless sudo. Direct Bash commands work.
 **NAS access:** Via `nas-direct` MCP server at `https://nas-mcp.designflow.app/mcp` (bearer token). All docker commands must be base64-encoded.

@@ -15,7 +15,8 @@
 #
 # =================
 #
-# Image: flrnnc/seafile-client
+# Image: ghcr.io/u2giants/seafile:seaf-cli-latest
+# Wrapper built on flrnnc/seafile-client — adds tini, fixed entrypoint.py.
 # Both containers LIVE on edgesynology1 as of 2026-05-08.
 # See README.md for deploy instructions.
 
@@ -24,14 +25,9 @@ name: seaf-cli
 services:
 
   seaf-cli-char-licensed:
-    image: flrnnc/seafile-client:latest
+    image: ghcr.io/u2giants/seafile:seaf-cli-latest
     container_name: seaf-cli-char-licensed
     restart: unless-stopped
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        python3 -c 'import urllib.request as r, os; r.urlretrieve("https://raw.githubusercontent.com/u2giants/seafile/main/synology-seaf-cli/seaf-entrypoint.py", "/tmp/sep.py"); os.chmod("/tmp/sep.py", 0o755)' && exec python3 /tmp/sep.py
     volumes:
       - /volume1/mac/Decor/Character Licensed:/source:ro
       - seaf-cli-char-licensed-staging:/library
@@ -45,14 +41,9 @@ services:
       - SEAF_SETTINGS_URL=https://seafile.designflow.app/nas-settings/api/settings
 
   seaf-cli-generic-decor:
-    image: flrnnc/seafile-client:latest
+    image: ghcr.io/u2giants/seafile:seaf-cli-latest
     container_name: seaf-cli-generic-decor
     restart: unless-stopped
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        python3 -c 'import urllib.request as r, os; r.urlretrieve("https://raw.githubusercontent.com/u2giants/seafile/main/synology-seaf-cli/seaf-entrypoint.py", "/tmp/sep.py"); os.chmod("/tmp/sep.py", 0o755)' && exec python3 /tmp/sep.py
     volumes:
       - /volume1/mac/Decor/Generic Decor:/source:ro
       - seaf-cli-generic-decor-staging:/library
