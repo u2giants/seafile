@@ -40,6 +40,7 @@ services:
       - SEAF_LIBRARY=177cf9de-3066-482e-956a-7ae8d8786c6d
       - SEAF_INGEST_DAYS=730
       - SEAF_SETTINGS_URL=https://seafile.designflow.app/nas-settings/api/settings
+      - SEAF_STATUS_TOKEN
 
   seaf-cli-generic-decor:
     image: ghcr.io/u2giants/seafile:seaf-cli-latest
@@ -61,6 +62,7 @@ services:
       - SEAF_LIBRARY=1b116ab7-d66b-4411-a691-21f34eadb731
       - SEAF_INGEST_DAYS=730
       - SEAF_SETTINGS_URL=https://seafile.designflow.app/nas-settings/api/settings
+      - SEAF_STATUS_TOKEN
 
 volumes:
   char-licensed-source:

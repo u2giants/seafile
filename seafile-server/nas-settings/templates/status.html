@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sync Status — POP Creations</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f0f2f5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: #1a2a4a;
+      color: #fff;
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    header .title { font-size: 1.05rem; font-weight: 600; letter-spacing: 0.01em; }
+
+    header a.logout {
+      color: rgba(255,255,255,0.7);
+      text-decoration: none;
+      font-size: 0.85rem;
+      transition: color 0.15s;
+    }
+    header a.logout:hover { color: #fff; }
+
+    main {
+      flex: 1;
+      max-width: 720px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 36px 16px 48px;
+    }
+
+    .page-nav {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 28px;
+      border-bottom: 2px solid #e5e7eb;
+    }
+
+    .nav-tab {
+      padding: 8px 18px 10px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #6b7280;
+      text-decoration: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      border-radius: 4px 4px 0 0;
+      transition: color 0.15s;
+    }
+    .nav-tab:hover { color: #1a2a4a; }
+    .nav-tab.active { color: #1a2a4a; border-bottom-color: #1a2a4a; }
+
+    .page-heading { font-size: 1.4rem; font-weight: 700; color: #1a2a4a; margin-bottom: 6px; }
+    .page-sub { color: #6b7280; font-size: 0.9rem; margin-bottom: 28px; }
+
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      padding: 24px 28px;
+      margin-bottom: 20px;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .card-header-left h2 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 3px;
+    }
+
+    .card-header-left .uuid {
+      font-family: "SF Mono", "Fira Code", "Courier New", monospace;
+      font-size: 0.75rem;
+      color: #9ca3af;
+    }
+
+    .last-seen {
+      font-size: 0.78rem;
+      color: #9ca3af;
+      text-align: right;
+      white-space: nowrap;
+    }
+    .last-seen.stale { color: #ef4444; }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    .status-badge.ok    { background: #f0fdf4; color: #15803d; }
+    .status-badge.busy  { background: #fffbeb; color: #b45309; }
+    .status-badge.error { background: #fef2f2; color: #b91c1c; }
+    .status-badge.idle  { background: #f9fafb; color: #6b7280; }
+
+    .dot {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot.ok    { background: #22c55e; }
+    .dot.busy  { background: #f59e0b; animation: pulse 1.2s ease-in-out infinite; }
+    .dot.error { background: #ef4444; }
+    .dot.idle  { background: #9ca3af; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .meta-item label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 3px;
+    }
+
+    .meta-item .val {
+      font-size: 0.9rem;
+      color: #374151;
+      font-weight: 500;
+    }
+
+    .meta-item .val.mono {
+      font-family: "SF Mono", "Fira Code", "Courier New", monospace;
+      font-size: 0.82rem;
+    }
+
+    .progress-bar-wrap {
+      height: 6px;
+      background: #e5e7eb;
+      border-radius: 3px;
+      margin-top: 12px;
+      overflow: hidden;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: #f59e0b;
+      border-radius: 3px;
+      transition: width 0.5s ease;
+    }
+
+    .no-data {
+      color: #9ca3af;
+      font-size: 0.9rem;
+      padding: 16px 0;
+    }
+
+    .refresh-note {
+      font-size: 0.78rem;
+      color: #9ca3af;
+      text-align: right;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <span class="title">NAS Sync Settings &mdash; POP Creations</span>
+    <a href="/accounts/logout/" class="logout">Sign out</a>
+  </header>
+
+  <main>
+    <nav class="page-nav">
+      <a href="{{ url_for('index') }}" class="nav-tab">Settings</a>
+      <a href="{{ url_for('status_page') }}" class="nav-tab active">Sync Status</a>
+    </nav>
+
+    <h1 class="page-heading">Sync Status</h1>
+    <p class="page-sub">Live status from the seaf-cli containers. Updates every 10 seconds.</p>
+
+    <div id="cards">
+      {% for lib in libraries %}
+      <div class="card" id="card-{{ lib.id }}">
+        <div class="card-header">
+          <div class="card-header-left">
+            <h2>{{ lib.name }}</h2>
+            <span class="uuid">{{ lib.uuid }}</span>
+          </div>
+          <div class="last-seen" id="seen-{{ lib.id }}">Waiting for first report…</div>
+        </div>
+        <div id="body-{{ lib.id }}">
+          <div class="no-data">No data yet. Container may be starting up.</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <p class="refresh-note" id="refresh-note">Refreshing…</p>
+  </main>
+
+  <script>
+    const LIBRARIES = {{ libraries | tojson }};
+
+    function ago(seconds) {
+      if (seconds === null || seconds === undefined) return "unknown";
+      if (seconds < 5)  return "just now";
+      if (seconds < 60) return seconds + "s ago";
+      if (seconds < 3600) return Math.floor(seconds / 60) + "m ago";
+      return Math.floor(seconds / 3600) + "h ago";
+    }
+
+    function fmtFiles(n) {
+      if (n === null || n === undefined) return "—";
+      return n.toLocaleString();
+    }
+
+    function fmtIngestDays(d) {
+      if (d === null || d === undefined) return "—";
+      if (d === 0) return "All files";
+      return d + " days";
+    }
+
+    function badgeClass(state, stale) {
+      if (stale) return "idle";
+      if (state === "synchronized") return "ok";
+      if (state === "uploading" || state === "downloading") return "busy";
+      if (state === "error") return "error";
+      return "idle";
+    }
+
+    function badgeLabel(entry, state, stale) {
+      if (stale) return "Offline";
+      if (!entry.daemon_alive) return "Daemon stopped";
+      if (state === "synchronized") return "Synchronized";
+      if (state === "uploading") {
+        const pct = entry.repos[0]?.progress_pct;
+        const rate = entry.repos[0]?.rate_kb;
+        let label = "Uploading";
+        if (pct !== null && pct !== undefined) label += " " + pct + "%";
+        if (rate !== null && rate !== undefined && rate > 0) label += " · " + rate + " KB/s";
+        return label;
+      }
+      if (state === "downloading") return "Downloading";
+      if (state === "error") return "Error: " + (entry.repos[0]?.error || "unknown");
+      if (state === "waiting") return "Waiting to sync";
+      if (!state) return "Starting up…";
+      return state;
+    }
+
+    function renderCard(lib, data) {
+      const bodyEl   = document.getElementById("body-" + lib.id);
+      const seenEl   = document.getElementById("seen-" + lib.id);
+
+      if (!data) {
+        seenEl.textContent = "No report received";
+        seenEl.className = "last-seen stale";
+        bodyEl.innerHTML = '<div class="no-data">Container has not reported in yet.</div>';
+        return;
+      }
+
+      const stale   = data.stale;
+      const secsAgo = data.seconds_ago;
+      seenEl.textContent = "Last seen: " + ago(secsAgo);
+      seenEl.className   = "last-seen" + (stale ? " stale" : "");
+
+      const repo  = (data.repos && data.repos[0]) || null;
+      const state = repo ? repo.state : null;
+      const cls   = badgeClass(state, stale);
+      const label = badgeLabel(data, state, stale);
+
+      let progressBar = "";
+      if (!stale && state === "uploading" && repo && repo.progress_pct !== null) {
+        progressBar = `<div class="progress-bar-wrap">
+          <div class="progress-bar" style="width:${repo.progress_pct}%"></div>
+        </div>`;
+      }
+
+      const lastIngest = data.last_ingest_at
+        ? new Date(data.last_ingest_at).toLocaleString()
+        : "—";
+
+      bodyEl.innerHTML = `
+        <div class="status-badge ${cls}">
+          <span class="dot ${cls}"></span>
+          ${label}
+        </div>
+        ${progressBar}
+        <div class="meta-grid">
+          <div class="meta-item">
+            <label>Daemon</label>
+            <div class="val">${data.daemon_alive ? "Running (PID " + data.daemon_pid + ")" : "Not running"}</div>
+          </div>
+          <div class="meta-item">
+            <label>Staging files</label>
+            <div class="val">${fmtFiles(data.staging_files)}</div>
+          </div>
+          <div class="meta-item">
+            <label>Ingest window</label>
+            <div class="val">${fmtIngestDays(data.ingest_days)}</div>
+          </div>
+          <div class="meta-item">
+            <label>Last ingest</label>
+            <div class="val">${lastIngest}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function refresh() {
+      try {
+        const resp = await fetch("{{ url_for('api_status_data') }}");
+        if (!resp.ok) return;
+        const data = await resp.json();
+        LIBRARIES.forEach(lib => {
+          // match by container_id (matches lib.id) or by library_uuid
+          const entry = data[lib.id]
+            || Object.values(data).find(e => e.library_uuid === lib.uuid)
+            || null;
+          renderCard(lib, entry);
+        });
+        document.getElementById("refresh-note").textContent =
+          "Last refreshed: " + new Date().toLocaleTimeString();
+      } catch (e) {
+        document.getElementById("refresh-note").textContent = "Refresh failed — retrying…";
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 10000);
+  </script>
+</body>
+</html>

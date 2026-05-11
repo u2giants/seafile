@@ -4,12 +4,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 import argparse
+import datetime
+import json
 import logging
 import os
 import signal
 import subprocess
 import sys
+import threading
 import time
+import urllib.request
 
 import seafile
 
@@ -241,6 +245,96 @@ class Client:
                 sys.exit(1)
             time.sleep(10)
 
+    def _collect_status(self) -> dict:
+        """Gather current sync state for reporting to the nas-settings panel."""
+        pid = self._daemon_pid()
+        daemon_alive = False
+        if pid is not None:
+            try:
+                os.kill(pid, 0)
+                daemon_alive = True
+            except ProcessLookupError:
+                pass
+
+        repos = []
+        if hasattr(self, "rpc"):
+            try:
+                rpc_repos = self.rpc.get_repo_list(-1, -1)
+                auto_sync = self.rpc.is_auto_sync_enabled()
+                for repo in rpc_repos:
+                    entry: dict = {
+                        "name": repo.name,
+                        "id": repo.id,
+                        "state": None,
+                        "rate_kb": None,
+                        "progress_pct": None,
+                        "error": None,
+                    }
+                    if not auto_sync or not repo.auto_sync:
+                        entry["state"] = "auto sync disabled"
+                    else:
+                        task = self.rpc.get_repo_sync_task(repo.id)
+                        if task is None:
+                            entry["state"] = "waiting"
+                        else:
+                            entry["state"] = task.state
+                            if task.state in ("uploading", "downloading"):
+                                tx = self.rpc.find_transfer_task(repo.id)
+                                if tx is not None:
+                                    if tx.block_total > 0:
+                                        entry["progress_pct"] = round(
+                                            tx.block_done / tx.block_total * 100, 1
+                                        )
+                                    entry["rate_kb"] = round(tx.rate / 1024.0, 1)
+                            elif task.state == "error":
+                                entry["error"] = self.rpc.sync_error_id_to_str(task.error)
+                    repos.append(entry)
+            except Exception:
+                pass
+
+        ingest: dict = {}
+        ingest_path = Path("/tmp/ingest-status.json")
+        if ingest_path.exists():
+            try:
+                ingest = json.loads(ingest_path.read_text())
+            except Exception:
+                pass
+
+        return {
+            "container_id": os.environ.get("HOSTNAME", "unknown"),
+            "library_uuid": os.environ.get("SEAF_LIBRARY", ""),
+            "reported_at": datetime.datetime.utcnow().isoformat() + "Z",
+            "daemon_pid": pid,
+            "daemon_alive": daemon_alive,
+            "repos": repos,
+            "staging_files": ingest.get("files"),
+            "last_ingest_at": ingest.get("last_ingest_at"),
+            "ingest_days": ingest.get("ingest_days"),
+        }
+
+    def _start_status_reporter(self, settings_url: str, token: str | None) -> None:
+        """Start a daemon thread that POSTs sync status to the server every 30 seconds."""
+        status_url = settings_url.rstrip("/").rsplit("/api/settings", 1)[0] + "/api/status"
+
+        def _loop() -> None:
+            while True:
+                try:
+                    payload = json.dumps(self._collect_status()).encode()
+                    headers = {"Content-Type": "application/json"}
+                    if token:
+                        headers["X-Status-Token"] = token
+                    req = urllib.request.Request(
+                        status_url, data=payload, headers=headers, method="POST"
+                    )
+                    with urllib.request.urlopen(req, timeout=10):
+                        pass
+                except Exception:
+                    pass  # best-effort; never crash the container
+                time.sleep(30)
+
+        threading.Thread(target=_loop, daemon=True, name="status-reporter").start()
+        logger.info("Status reporter started → %s", status_url)
+
     def healthcheck(self) -> int:
         tasks = self.rpc.get_clone_tasks()
         healthy = True
@@ -339,4 +433,10 @@ if __name__ == "__main__":
     client.initialize()
     client.configure()
     client.synchronize()
+
+    settings_url = get_configuration("SEAF_SETTINGS_URL", None)
+    status_token = get_configuration("SEAF_STATUS_TOKEN", None)
+    if settings_url:
+        client._start_status_reporter(settings_url, status_token)
+
     client.watch()

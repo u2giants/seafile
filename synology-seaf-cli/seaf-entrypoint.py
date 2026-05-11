@@ -19,6 +19,7 @@ hands off to the upstream entrypoint at /home/seafile/entrypoint.py.
                      UUID at startup and on every hourly refresh. On fetch
                      failure it falls back silently to SEAF_INGEST_DAYS.
 """
+import datetime
 import json
 import logging
 import os
@@ -123,6 +124,14 @@ def populate(days=None):
             log.warning('Skip %s: %s', rel, e)
 
     log.info('Library ready — %d files updated', copied)
+    try:
+        Path('/tmp/ingest-status.json').write_text(json.dumps({
+            "files": len(wanted),
+            "ingest_days": days,
+            "last_ingest_at": datetime.datetime.utcnow().isoformat() + "Z",
+        }))
+    except OSError:
+        pass
 
 
 def refresh_loop(env_days, settings_url, library_uuid):

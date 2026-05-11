@@ -9,6 +9,7 @@ services:
       - nas-settings-data:/data
     environment:
       - SECRET_KEY=${NAS_SETTINGS_SECRET_KEY}
+      - STATUS_TOKEN=${NAS_STATUS_TOKEN}
       - SEAFILE_INTERNAL_URL=http://seafile:8000
       - SEAFILE_PUBLIC_HOST=seafile.designflow.app
     labels:

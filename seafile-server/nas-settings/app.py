@@ -16,6 +16,7 @@ Env vars:
 
 State is persisted to /data/settings.json.
 """
+import datetime
 import json
 import os
 import urllib.error
@@ -48,7 +49,9 @@ LIBRARIES = [
 ]
 
 SETTINGS_PATH = Path("/data/settings.json")
+STATUS_PATH = Path("/data/status.json")
 DEFAULT_INGEST_DAYS = 730
+STATUS_STALE_SECONDS = 120  # containers reporting older than this are shown as offline
 
 PRESET_OPTIONS = [
     ("", "All files (no limit)"),
@@ -90,6 +93,7 @@ _SEAFILE_INTERNAL = os.environ.get("SEAFILE_INTERNAL_URL", "http://seafile:8000"
 _SEAFILE_PUBLIC_HOST = os.environ.get("SEAFILE_PUBLIC_HOST", "seafile.designflow.app")
 _SEAFILE_ADMIN_API = f"{_SEAFILE_INTERNAL}/api/v2.1/admin/sysinfo/"
 _SEAFILE_LOGIN_URL = f"https://{_SEAFILE_PUBLIC_HOST}/oauth/login/"
+_STATUS_TOKEN = os.environ.get("STATUS_TOKEN", "")
 
 app.wsgi_app = PrefixMiddleware(app.wsgi_app, prefix="/nas-settings")
 
@@ -115,6 +119,22 @@ def load_settings() -> dict:
 def save_settings(data: dict) -> None:
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(SETTINGS_PATH, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def load_status() -> dict:
+    if STATUS_PATH.exists():
+        try:
+            with open(STATUS_PATH) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def save_status(data: dict) -> None:
+    STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(STATUS_PATH, "w") as f:
         json.dump(data, f, indent=2)
 
 
@@ -193,6 +213,54 @@ def index():
         preset_values=PRESET_VALUES,
         saved=saved,
     )
+
+
+@app.route("/status")
+def status_page():
+    if not is_seafile_admin():
+        return redirect(_SEAFILE_LOGIN_URL)
+    return render_template("status.html", libraries=LIBRARIES)
+
+
+@app.route("/api/status", methods=["POST"])
+def api_status_post():
+    """Receive a status report from a seaf-cli container."""
+    if not _STATUS_TOKEN:
+        return jsonify({"error": "status reporting not configured"}), 404
+    if request.headers.get("X-Status-Token") != _STATUS_TOKEN:
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    container_id = data.get("container_id", "")
+    if not container_id:
+        return jsonify({"error": "missing container_id"}), 400
+    status = load_status()
+    status[container_id] = data
+    save_status(status)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/status-data")
+def api_status_data():
+    """Return current container status with staleness annotations. Requires admin session."""
+    if not is_seafile_admin():
+        return jsonify({"error": "unauthorized"}), 401
+    raw = load_status()
+    now = datetime.datetime.utcnow()
+    result = {}
+    for cid, entry in raw.items():
+        reported_at = entry.get("reported_at", "")
+        stale = True
+        seconds_ago = None
+        if reported_at:
+            try:
+                ts = datetime.datetime.fromisoformat(reported_at.rstrip("Z"))
+                delta = (now - ts).total_seconds()
+                stale = delta > STATUS_STALE_SECONDS
+                seconds_ago = int(delta)
+            except Exception:
+                pass
+        result[cid] = {**entry, "stale": stale, "seconds_ago": seconds_ago}
+    return jsonify(result)
 
 
 @app.route("/api/settings")
