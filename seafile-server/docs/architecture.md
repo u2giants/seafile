@@ -5,21 +5,23 @@
 ```
 NYC Office                          Linode VPS (172.233.14.233)              São Paulo
                                                                               
-Synology NAS ──── seaf-cli ────►  seafile.designflow.app  ◄──── HTTPS ────  designers
-(source of truth)  (Docker)         (Seafile Pro 13.0)         (browser/
-  /volume1/mac/                            │                     desktop app)
-  Decor/…                                  │ reads/writes
-                                           ▼
-                                  Linode Object Storage
-                                    br-gru-1 (São Paulo)
-                                  ┌──────────────────────┐
-                                  │ seafile-s3  (blocks) │
-                                  │ seafile-s3-commits   │
-                                  │ seafile-s3-fs        │
-                                  └──────────────────────┘
+Synology NAS ─── seaf-cli ──────►  seafile.designflow.app  ◄──── HTTPS ────  designers
+(source of truth)  (Docker, on       (Seafile Pro 13.0)          (browser/
+  /volume1/mac/    NAS directly or           │                    desktop app)
+  Decor/…          via SMB from LAN)         │ reads/writes
+                                             ▼
+                                    Linode Object Storage
+                                      br-gru-1 (São Paulo)
+                                    ┌──────────────────────┐
+                                    │ seafile-s3  (blocks) │
+                                    │ seafile-s3-commits   │
+                                    │ seafile-s3-fs        │
+                                    └──────────────────────┘
 ```
 
 The VPS does not store file data on disk. All file blocks go to S3. The VPS disk holds only the database (MariaDB), Caddy TLS state, and application config.
+
+The seaf-cli containers can run on the Synology NAS (bind-mounting source folders directly) or on a Windows workstation on the same LAN (mounting the same folders over CIFS/SMB). Only one deployment should be active at a time — running both simultaneously causes two clients to sync the same library concurrently.
 
 ## Docker Stack
 
@@ -75,14 +77,16 @@ Image: `nas-settings:local` (built locally from `seafile-server/nas-settings/`)
 
 Flask app that exposes a settings UI for the NAS sync ingest window at `/nas-settings/`. Auth delegates to Seafile: the app calls Seafile's internal admin API on every request to verify the `sessionid` cookie belongs to a system admin — no separate credentials. Persists settings to a named Docker volume (`nas-settings-data`). Managed by `nas-settings.yml`, deployed separately from the main stack (not in `COMPOSE_FILE`).
 
-## NAS Sync Architecture
+## seaf-cli Sync Architecture
 
-Two seaf-cli containers run on the Synology NAS (`edgesynology1`), one per library. The image is `ghcr.io/u2giants/seafile:seaf-cli-latest` — a wrapper built on `flrnnc/seafile-client` from this repo's `synology-seaf-cli/` directory.
+Two seaf-cli containers run one per library. The image is `ghcr.io/u2giants/seafile:seaf-cli-latest` — a wrapper built on `flrnnc/seafile-client` from this repo's `synology-seaf-cli/` directory.
 
 Each container follows this flow on startup and hourly:
 
 ```
-/source (NAS bind mount, read-only)
+/source (source files, read-only)
+    │  On NAS:      bind mount from /volume1/mac/Decor/…
+    │  On Windows:  CIFS named volume from //edgesynology1/mac/Decor/… over LAN
     │
     ▼ seaf-entrypoint.py
     │  – filters files by mtime (SEAF_INGEST_DAYS)
@@ -90,7 +94,7 @@ Each container follows this flow on startup and hourly:
     │  – removes stale files from /library
     │  – starts hourly refresh thread (kept alive by subprocess.run below)
     ▼
-/library (Docker staging volume)
+/library (Docker named volume — staging)
     │
     ▼ entrypoint.py (fixed version, baked into wrapper image)
     │  – starts seaf-daemon
@@ -101,6 +105,18 @@ Seafile → S3
 ```
 
 `seaf-entrypoint.py` reads per-library `ingest_days` from `https://seafile.designflow.app/nas-settings/api/settings` on startup and on each hourly refresh; falls back to `SEAF_INGEST_DAYS` from the environment if the fetch fails.
+
+### Deployment options
+
+| | NAS (`synology-seaf-cli/`) | Windows workstation (`windows-workstation/`) |
+|---|---|---|
+| Source mount | Local bind mount | CIFS named volume over LAN SMB |
+| CPU load | Runs on the NAS | Offloaded to Windows machine |
+| Setup | NAS MCP base64 commands | `setup.ps1` run once as Administrator |
+| seaf-entrypoint.py | Identical | Identical |
+| Docker image | Identical | Identical |
+
+Only one deployment should be active at a time. To cut over: start the new deployment, verify both containers healthy, then stop the old deployment.
 
 ### Process Supervision
 

@@ -28,6 +28,11 @@ synology-seaf-cli/            NYC Synology NAS — running on edgesynology1
 ├── .env.example              NAS sync credentials template
 └── README.md                 Synology setup and redeploy instructions
 
+windows-workstation/          Windows rendering machine — seaf-cli + PopDAM agent
+├── docker-compose.yml        seaf-cli containers (sources via CIFS from NAS over LAN)
+├── setup.ps1                 One-shot installer: PopDAM agent + Docker + seaf-cli
+└── README.md                 Machine replacement instructions
+
 .github/workflows/
 └── seaf-cli-image.yml        Lint + build + push seaf-cli wrapper image to GHCR
 ```

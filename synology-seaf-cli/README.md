@@ -2,7 +2,9 @@
 
 Syncs folders from the NYC Synology NAS to Seafile Pro at `seafile.designflow.app`. One Docker container per library.
 
-**Status: Both containers live on edgesynology1 as of 2026-05-08.**
+**This is the NAS deployment.** An alternative Windows workstation deployment exists at `windows-workstation/` for running the same containers on a LAN-connected Windows machine via SMB mounts, offloading CPU from the NAS. Only one deployment should be active at a time.
+
+**Status: Both containers live on edgesynology1.**
 
 ## Live Containers
 

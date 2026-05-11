@@ -215,6 +215,23 @@ Backs up all three MariaDB databases daily. Does **not** back up file data — t
 
 ---
 
+## Windows Workstation — C:\ProgramData\seaf-cli\.env
+
+Written by `windows-workstation/setup.ps1` the first time it runs. Not committed to the repo. Contains:
+
+```
+SEAF_USERNAME=nas-sync@popcre.com
+SEAF_PASSWORD=<from /opt/seafile/CREDENTIALS.txt on VPS>
+NAS_USERNAME=<Synology local account with read access to mac share>
+NAS_PASSWORD=<that account's password>
+```
+
+`SEAF_USERNAME` and `SEAF_PASSWORD` are the same credentials used by the NAS containers. `NAS_USERNAME` and `NAS_PASSWORD` are Synology-specific — used by Docker's CIFS volume driver to mount `//edgesynology1/mac/Decor/…` into the containers. These do not exist in the NAS deployment (which uses local bind mounts instead).
+
+To change credentials: delete `C:\ProgramData\seaf-cli\.env` and re-run `setup.ps1`.
+
+---
+
 ## Docker Registry Credentials
 
 Seafile's private registry (`docker.seadrive.org`) — needed to pull `latest` or future versions:

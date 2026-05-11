@@ -36,7 +36,7 @@ Both start automatically when you log in.
    ```
 4. Follow the prompts:
    - The PopDAM installer will open — complete it, then return to PowerShell
-   - Enter your Seafile email and password
+   - Enter the Seafile sync account credentials (`nas-sync@popcre.com` + password from `/opt/seafile/CREDENTIALS.txt` on the VPS)
    - Enter a NAS account username and password (needs read access to the `mac` shared folder on edgesynology1)
 
 That's it. Both the PopDAM agent and the Seafile containers will start automatically from now on.
@@ -56,14 +56,9 @@ You do not need to copy anything else. The sync state rebuilds automatically fro
 
 ## Cutting over from the NAS (first-time only)
 
-The Seafile upload containers currently run on the Synology NAS. Once this Windows machine is set up, stop the NAS containers so only one machine is uploading at a time:
+The Seafile upload containers currently run on the Synology NAS. Once this Windows machine is set up and verified healthy, ask Claude to stop the NAS containers — it has NAS access and knows the exact commands. Tell it: "stop the seaf-cli containers on the NAS."
 
-```bash
-# On the NAS (via SSH or the NAS MCP tool):
-docker compose -f /path/to/synology-seaf-cli/docker-compose.yml stop
-```
-
-Or ask Claude to do this — it has NAS access.
+Do not run both simultaneously — two clients syncing the same library at once will conflict.
 
 ---
 

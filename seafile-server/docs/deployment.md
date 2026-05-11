@@ -41,9 +41,15 @@ cd /home/ai/seafile-repo/seafile-server && docker compose -f nas-settings.yml bu
 
 **Note:** The build context in `nas-settings.yml` is `./nas-settings` (relative to the compose file). Run the build from the `seafile-server/` directory, not from `/opt/seafile/`.
 
-## NAS seaf-cli Containers
+## seaf-cli Containers
 
-The two seaf-cli containers on edgesynology1 use `ghcr.io/u2giants/seafile:seaf-cli-latest`. They are managed via the NAS MCP (not SSH). All docker commands must be base64-encoded — see AGENTS.md.
+The seaf-cli containers use `ghcr.io/u2giants/seafile:seaf-cli-latest`. They can run on the NAS or on the Windows workstation — see `seafile-server/docs/architecture.md` for the comparison. Both deployments use the same image and the same `docker-compose.yml` structure; only the source volume type differs.
+
+Currently running on: **NAS (edgesynology1)**.
+
+### NAS deployment
+
+Managed via the NAS MCP (not SSH). All docker commands must be base64-encoded — see AGENTS.md.
 
 ### Release a code change to seaf-cli
 
@@ -74,6 +80,33 @@ When only `synology-seaf-cli/docker-compose.yml` changes (environment, volumes �
 CMD="/var/packages/ContainerManager/target/usr/bin/docker compose -f /tmp/seaf-cli-compose.yml up -d"
 echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
 ```
+
+### Windows workstation deployment
+
+Prerequisites on the Windows machine: WSL2 enabled, Docker Desktop installed with "Start Docker Desktop when you log in" enabled.
+
+```powershell
+# Run once as Administrator from the windows-workstation/ directory
+.\setup.ps1
+```
+
+`setup.ps1` installs the PopDAM Windows Agent (downloads from GitHub releases if not already present), writes `.env` credentials, starts the seaf-cli containers, and registers a login-triggered scheduled task.
+
+**Cutover procedure (switching from NAS to Windows):**
+1. Run `setup.ps1` on the Windows machine and verify `docker ps` shows both containers healthy
+2. Stop the NAS containers via NAS MCP:
+```bash
+CMD="/var/packages/ContainerManager/target/usr/bin/docker compose -f /tmp/seaf-cli-compose.yml stop"
+echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
+```
+
+**Machine replacement:** Copy the `windows-workstation/` folder to the new machine, run `setup.ps1`. Sync state rebuilds from scratch (seaf-daemon re-hashes all files on first start — expect 200-300% CPU for several hours).
+
+**Credentials needed for setup.ps1:**
+- Seafile: `SEAF_USERNAME` / `SEAF_PASSWORD` — from `/opt/seafile/CREDENTIALS.txt` on VPS (nas-sync@popcre.com)
+- NAS SMB: `NAS_USERNAME` / `NAS_PASSWORD` — a Synology local account with read access to the `mac` shared folder on edgesynology1
+
+---
 
 ## First-Time Deployment
 
@@ -153,6 +186,9 @@ Caddy manages Let's Encrypt automatically. Certificates auto-renew. No action ne
 If renewal fails: verify DNS still resolves correctly and port 80 is reachable (used for ACME HTTP challenge), then check `docker logs seafile-caddy`.
 
 ## Remaining Work
+
+### Windows workstation cutover (optional)
+`windows-workstation/setup.ps1` is ready. Run it on the Windows rendering machine to move the seaf-cli upload work off the NAS. Not required — NAS containers are healthy. See Windows workstation deployment above.
 
 ### Designer user accounts
 Send designers `https://seafile.designflow.app` — accounts are created automatically on first M365 SSO login (requires a POP Creations Microsoft account in the tenant). Albert then shares the relevant libraries via the web UI.

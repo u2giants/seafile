@@ -1,82 +1,66 @@
 # HANDOFF
 
-## What this is
-
-This session diagnosed and fixed critical process management bugs in the Synology NAS seaf-cli containers, built a proper wrapper Docker image, set up a CI/CD pipeline, and updated all documentation. One action remains before the fix is live in production.
-
 ## What is fully done
 
-- **Root cause analysis** — Three upstream bugs in `flrnnc/seafile-client` confirmed in the live containers:
-  1. `healthcheck()` always exits 0 (missing `return` statement)
-  2. seaf-daemon becomes a zombie with no detection or restart (`follow()` blocked on `tail`, exited code 0)
-  3. `chown -R` on every container start (in `entrypoint-docker.sh`, though this was bypassed by the existing compose override)
-  - One additional bug in our own `seaf-entrypoint.py`: `os.execv` killed the hourly refresh thread
+### NAS seaf-cli containers (edgesynology1)
+Both containers are running and healthy on edgesynology1 with `ghcr.io/u2giants/seafile:seaf-cli-latest`:
+- `seaf-cli-char-licensed` — Character Licensed library, 730-day ingest window, 2g memory, cpu_shares 512
+- `seaf-cli-generic-decor` — Generic Decor library, 730-day ingest window, 512m memory, cpu_shares 512
 
-- **Wrapper image built and published** — `ghcr.io/u2giants/seafile:seaf-cli-latest` is live at GHCR, built from `synology-seaf-cli/` in this repo. Includes:
-  - `tini` as PID 1 (zombie reaping, signal forwarding)
-  - Fixed `entrypoint.py` (watchdog loop, correct healthcheck exit codes, SIGTERM handler, timeouts, no shell injection, credentials redacted from debug logs)
-  - Fixed `seaf-entrypoint.py` (`subprocess.run` instead of `os.execv` so the hourly refresh thread survives)
-  - Stale PID/socket cleanup before `seaf-cli start` (needed on `--force-recreate`: old container's PID maps to a live process in the new PID namespace, causing `seaf-cli start` to exit 1)
-  - `from __future__ import annotations` in both Python files (the `str | None` / `int | None` union syntax requires Python 3.10+; flrnnc base image runs an older Python)
+The wrapper image (built from `synology-seaf-cli/`) fixes three upstream bugs in `flrnnc/seafile-client` and adds tini as PID 1, a watchdog loop, correct healthcheck exit codes, and stale PID/socket cleanup on `--force-recreate`. See `synology-seaf-cli/README.md` for full details.
 
-- **NAS containers deployed and verified** — both `seaf-cli-char-licensed` and `seaf-cli-generic-decor` on edgesynology1 are running `ghcr.io/u2giants/seafile:seaf-cli-latest` with status `healthy` as of 2026-05-11. Credentials at `/tmp/.env` on NAS (not persistent across NAS reboots — see re-deploy instructions in `synology-seaf-cli/README.md`).
+### Windows workstation setup scripts
+`windows-workstation/` is fully built and ready to deploy:
+- `setup.ps1` — one-shot installer run as Administrator; handles PopDAM agent + Docker Desktop check + seaf-cli containers + login autostart
+- `docker-compose.yml` — identical service config to the NAS version, but sources mounted via CIFS named volumes (`//edgesynology1/mac/Decor/…`) instead of bind mounts
+- `README.md` — machine replacement instructions for Albert
 
-- **GitHub Actions workflow** — `.github/workflows/seaf-cli-image.yml` — triggers on changes to `synology-seaf-cli/Dockerfile`, `entrypoint.py`, or `seaf-entrypoint.py`; runs pyflakes lint then builds and pushes to GHCR
+**These scripts have not been run on the Windows machine yet.** They are ready to use.
 
-- **`docker-compose.yml` updated** — image changed from `flrnnc/seafile-client:latest` to `ghcr.io/u2giants/seafile:seaf-cli-latest`; inline entrypoint download removed (baked into image now)
+### Documentation
+All docs updated to reflect current state. No stale content.
 
-- **AGENTS.md updated** — idiosyncratic decisions, deployment section, repo structure
-
-- **All documentation updated** — README.md, architecture.md, synology-seaf-cli/README.md, deployment.md, development.md
-
-- **Upstream issues prepared** — three ready-to-paste GitLab issue files in `/home/ai/seafile-client-fix/` on the VPS
+---
 
 ## What is NOT done yet
 
-### 2. File the three GitLab upstream issues
+### 1. Windows workstation cutover (optional — Albert's call)
 
-Three issue bodies are ready at `/home/ai/seafile-client-fix/` on the VPS:
-- `issue-1-healthcheck-always-zero.md` — **file first, most critical**
-- `issue-2-zombie-daemon-no-watchdog.md`
-- `issue-3-chown-r-on-every-start.md`
+**What:** Move seaf-cli containers from the NAS to the Windows rendering machine to reduce NAS CPU load.
 
-Go to https://gitlab.com/flrnnc-oss/docker-seafile-client/-/issues/new. Use the first `#` heading as the title; paste the file body. Requires a GitLab account — no automation available (no `glab` CLI, no GitLab token on this VPS).
+**Why not done yet:** Requires confirming (a) Docker Desktop is installed on the Windows machine, and (b) what NAS account to use for CIFS credentials. Albert hasn't confirmed Docker Desktop is there.
 
-### 3. Designer onboarding (pre-existing, unrelated to this session)
+**Exact next action:**
+1. Confirm Docker Desktop is installed on the Windows machine (if not, install it: https://www.docker.com/products/docker-desktop/ — enable "Start Docker Desktop when you log in")
+2. Identify a Synology local account with read access to the `mac` shared folder on edgesynology1 for the CIFS mounts — create one if needed via Synology Control Panel → User & Group
+3. On the Windows machine: open PowerShell as Administrator, navigate to `windows-workstation/`, run `.\setup.ps1`
+4. Enter credentials when prompted: Seafile = `nas-sync@popcre.com` + password from `/opt/seafile/CREDENTIALS.txt` on VPS; NAS = the account from step 2
+5. Verify `docker ps` shows both containers healthy and logs show "synchronized"
+6. Tell Claude to stop the NAS seaf-cli containers
 
-8 São Paulo designers still need library access. Send them `https://seafile.designflow.app`; they sign in with M365 SSO; then Albert shares Character Licensed and Generic Decor libraries via the web UI (Read/Write). See `seafile-server/docs/development.md` → "Managing Users".
+**Risk:** On first start, seaf-daemon SHA1-hashes every file to build its sync tree. For the Character Licensed library (~467k files), expect 200-300% CPU for several hours. This is normal.
 
-## Decisions made this session and why
+**Risk:** If `edgesynology1` doesn't resolve from inside Docker Desktop's WSL2 VM, the CIFS mounts will fail. Fix: edit `C:\ProgramData\seaf-cli\docker-compose.yml` and replace `edgesynology1` with the NAS IP address.
 
-- **Wrapper image over full fork** — upstream bugs are real but the maintainer is active (379 commits, 17 releases). Wrapper lets us fix production now while leaving door open for upstream fixes to land.
-- **`subprocess.run` over `os.execv`** — preserves the hourly refresh thread that `os.execv` was silently killing. This was a pre-existing bug in our own `seaf-entrypoint.py`.
-- **`sys.exit(result.returncode)` not `sys.exit(1)` from seaf-entrypoint.py** — `restart: unless-stopped` restarts on any exit including 0, so the exit code doesn't matter for restart behavior.
-- **Single atomic git commit for all code + docs** — avoids a state where compose references an image that hasn't built yet.
-- **GitHub `workflow` scope added separately** — the initial commit token lacked the `workflow` OAuth scope needed to push to `.github/workflows/`. Required `gh auth refresh -s workflow` using device code flow (browser auth from another machine).
+### 2. Designer user accounts (pre-existing, unrelated to seaf-cli work)
 
-## Bugs found during the first production deploy (2026-05-11)
+8 São Paulo designers still need Seafile library access. The system is ready; they just haven't been invited.
 
-Two additional bugs surfaced that were not caught in the image build:
+**Exact next action:** Send designers `https://seafile.designflow.app`. They click "Sign in with Microsoft" and log in with their POP Creations M365 account — accounts create automatically. Albert then shares Character Licensed and Generic Decor libraries with each: open library → Share icon → Share to User → designer email → Read/Write.
 
-1. **Stale PID/socket on `--force-recreate`** — `seaf-cli start` reads `seafile.pid` from the persistent `/seafile` volume. In a new container's PID namespace, the old PID may belong to a live process (tini, python). seaf-cli sees it as "already running" and exits 1. Fixed in `entrypoint.py` `initialize()`: delete stale pid and sock files before calling `seaf-cli start`.
+---
 
-2. **Python 3.10 union type syntax** — `str | None` and `int | None` in function signatures require Python 3.10+. The flrnnc base image uses an older Python. Fixed with `from __future__ import annotations` at the top of both files, which makes all annotations lazy strings at runtime.
+## Decisions made and why
 
-Neither bug would have appeared in a test environment using Python 3.10+. Future changes to these files should be tested with `python3 --version` matching the base image.
+- **seaf-cli on Windows uses CIFS named volumes, not bind mounts** — Docker Desktop on Windows can't bind-mount UNC paths (`\\server\share`). CIFS named volumes mount via the Linux CIFS stack inside WSL2 and work reliably over LAN.
+- **One PowerShell script bundles PopDAM + seaf-cli** — Albert's explicit goal was "one thing to install" for machine recovery. `setup.ps1` is idempotent (each step checks if already done), so re-running on an existing machine is safe.
+- **seaf-cli on Windows or NAS — not both** — two seaf-cli processes syncing the same library concurrently is unsupported and would cause conflicts. The cutover requires stopping the old deployment.
+- **CPU spike on first start is unavoidable** — seaf-daemon must SHA1-hash every file byte. SEAF_UPLOAD_LIMIT/SEAF_DOWNLOAD_LIMIT only throttle network, not hashing. This is inherent to seaf-cli's design.
 
-## Dead ends / approaches abandoned
+---
 
-- **Direct `gh auth refresh`** — requires a browser or interactive TTY; the VPS is headless. Solved with device code flow (`--hostname github.com` flag required).
-- **Git tree API with `.github/workflows/` path** — returned HTTP 404 regardless of parameters; root cause was missing `workflow` OAuth scope on the token. Misleading error message.
-- **Single commit including the workflow file** — blocked by the above; split into two commits.
+## Context that exists only in this conversation
 
-## Known risks
-
-- The `seaf-cli-*-data` volumes have accumulated sync state from the buggy containers. After restart with the new image, seaf-daemon will resume from its last sync state — this is correct behavior. If any corruption occurred while the zombie was running, a full re-sync can be forced by deleting the `*-data` volumes (seaf-daemon re-initializes from scratch).
-- The GHCR image is public (repo is public). This is intentional and safe — the image contains no secrets.
-
-## Context that would otherwise be lost
-
-- The `seaf-entrypoint.py` `os.execv` bug was not in the upstream `flrnnc/seafile-client` — it was in our own wrapper script. The upstream bugs are in `entrypoint.py` (the upstream file). Our `seaf-entrypoint.py` had a separate silent bug where the hourly refresh never actually ran because exec replaced the process before the first `time.sleep(3600)` completed.
-- The containers were never using `/entrypoint.sh` (the shell wrapper that does `chown -R`). The original compose file had an inline entrypoint override that bypassed it. So the `chown -R` observed at 10-22% CPU was likely from a period before the entrypoint override was added, or from a different container configuration. The wrapper image makes this permanently irrelevant.
-- The `SEAF_SETTINGS_URL` env var points to the nas-settings panel API. If the VPS is down, seaf-entrypoint.py falls back silently to `SEAF_INGEST_DAYS` from the compose env. No manual intervention needed.
+- The Windows rendering machine already runs the PopDAM Windows Agent as a Windows Scheduled Task ("PopDAM Windows Render Agent"). `setup.ps1` detects this and skips the PopDAM install step.
+- The Synology NAS has two NICs. Albert asked about dedicating one to seaf-cli traffic. Decision: not worth doing. seaf-cli only reads from the NAS during the hourly staging pass; the rest of the time it's uploading to the internet. No NIC contention in practice.
+- NAS seaf-cli on the NAS uses `cpu_shares: 512` (not `cpus:`) because Synology's kernel does not support CFS CPU quota cgroups. Hard `cpus` limits were tried and returned "NanoCPUs can not be set". On Windows, this is not an issue — Docker Desktop on WSL2 supports both.
