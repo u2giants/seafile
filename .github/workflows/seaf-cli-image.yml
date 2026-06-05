@@ -9,6 +9,11 @@ on:
       - synology-seaf-cli/seaf-entrypoint.py
   workflow_dispatch:
 
+# §27: don't let an obsolete build hold up a newer commit on the same ref.
+concurrency:
+  group: seaf-cli-image-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -41,4 +46,11 @@ jobs:
         with:
           context: synology-seaf-cli
           push: true
-          tags: ghcr.io/u2giants/seafile:seaf-cli-latest
+          # §6.2/§18: mutable pointer for normal deploys + immutable commit tag
+          # for audit and §6.3 rollback (redeploy a prior sha- tag on the NAS).
+          tags: |
+            ghcr.io/u2giants/seafile:seaf-cli-latest
+            ghcr.io/u2giants/seafile:sha-${{ github.sha }}
+          # §27: reuse layers across builds; still produces a fresh image.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

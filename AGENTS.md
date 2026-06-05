@@ -367,7 +367,22 @@ No large third-party packages are included in this repo. Nothing to ignore for A
 
 ## Deployment
 
-This is a **config-only repo** — there is no Docker image to build and push. The standard GitHub Actions → GHCR → Coolify pipeline does not apply.
+This is primarily a **config-only repo**. The single build artifact is the seaf-cli wrapper image (`ghcr.io/u2giants/seafile:seaf-cli-latest` + `:sha-<commit>`); everything else (VPS Seafile, MariaDB, Redis, Caddy) runs upstream images with no build step.
+
+### CI/CD model — documented §25 exception to the Coolify default
+
+The org-wide CI/CD rules assume a deployment platform (Coolify) that GitHub Actions triggers by API/webhook, which then pulls and runs the image. **This repo has no deployment platform**, so that path does not apply. Per §25, the exception is recorded here:
+
+- **Why the default doesn't fit:** The runtime hosts are a Linode VPS (Seafile server, managed by direct Docker Compose) and a Synology NAS / Windows workstation (the seaf-cli containers). None is fronted by Coolify or any deploy platform; a Synology NAS in particular cannot run one. There is no platform API to trigger.
+- **Replacement release path:** Edit files in repo → commit to `main` → GitHub Actions (`seaf-cli image`) lints (`pyflakes`, gate via `needs: lint`), builds, and publishes the image to GHCR. Deployment is then a manual, repo-driven pull of that **already-published** image on the target host (no rebuild on the host). The host runs only what the repo (compose) + registry (image) define.
+- **Verification enforcement:** The `build-push` job depends on `lint` with native `needs`; a lint failure blocks publish. There is no second workflow and no SHA-polling gate.
+- **Artifact deployed:** Exactly the image built by the approved workflow, identified by the immutable `sha-<commit>` tag. `seaf-cli-latest` is the convenience pointer for normal deploys.
+- **Rollback:** Re-point a NAS/Windows container at a prior `ghcr.io/u2giants/seafile:sha-<older-commit>` tag and `up -d` — no manual file edits or local image builds.
+- **Where runtime config lives:** In repo-managed `docker-compose.yml` (image, volumes, env var *names*, resource limits) plus host-side secret *values* in `/tmp/.env` (NAS) and `/opt/seafile/.env` (VPS). There is no deploy platform to own runtime config, so the repo compose is authoritative and host env files hold only secret values.
+- **Audit trail:** GitHub Actions run history + GHCR `sha-` tags + git commit history. Every deployed container traces to a commit via its `sha-` tag.
+- **Avoiding hidden server state:** No CI step SSHes into or mutates production. The NAS pull/recreate is a manual operation that runs the published image against the repo's compose — it does not define new production behavior on the host. The Prime Directive (no server-only changes) keeps the repo authoritative.
+
+**Not a normal deploy path:** GitHub Actions must never SSH into the VPS/NAS or run Docker there (§3/§10). CI's job ends at publishing to GHCR.
 
 ### How changes get deployed
 
@@ -381,8 +396,9 @@ This is a **config-only repo** — there is no Docker image to build and push. T
 **NAS image changes (synology-seaf-cli/Dockerfile, entrypoint.py, seaf-entrypoint.py):**
 1. Edit the relevant file in this repo
 2. Commit to `main` and push
-3. GitHub Actions (`seaf-cli image` workflow) builds and pushes `ghcr.io/u2giants/seafile:seaf-cli-latest`
+3. GitHub Actions (`seaf-cli image` workflow) builds and pushes both `ghcr.io/u2giants/seafile:seaf-cli-latest` and `ghcr.io/u2giants/seafile:sha-<commit>`
 4. After CI succeeds: pull the new image on the NAS and recreate containers (via NAS MCP base64 commands)
+5. **Rollback:** pin the affected service's `image:` to a known-good `ghcr.io/u2giants/seafile:sha-<older-commit>` and `up -d` — never rebuild on the host or hand-edit container state
 
 **NAS compose changes (synology-seaf-cli/docker-compose.yml):**
 1. Edit `synology-seaf-cli/docker-compose.yml` in this repo
