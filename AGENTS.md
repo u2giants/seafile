@@ -236,8 +236,8 @@ No large third-party packages are included in this repo. Nothing to ignore for A
 
 ### NAS source mounts to /source; /library is a Docker staging volume
 **Looks like:** The NAS folder should mount directly to `/library`.
-**Actually:** The `flrnnc/seafile-client` image uses `/library` as its sync target and `/seafile` for state. We mount the NAS folder read-only at `/source`, and a staging Docker volume at `/library`. A Python wrapper (`seaf-entrypoint.py`) populates `/library` from `/source` (with optional date filtering via `SEAF_INGEST_DAYS`) before handing off to the image's own `entrypoint.py`.
-**Why:** Enables per-library date-range filtering without modifying the upstream image. seaf-cli sees a clean, filtered `/library` and syncs that to Seafile.
+**Actually:** The `flrnnc/seafile-client` image uses `/library` as its sync target and `/seafile` for state. We mount the NAS folder read-only at `/source`, and a staging Docker volume at `/library`. A Python wrapper (`seaf-entrypoint.py`) populates `/library` from `/source` (with optional date filtering via `SEAF_INGEST_DAYS`) before handing off to the image's own `entrypoint.py`. Staging is done with **hardlinks** (one `os.scandir` pass to select by mtime; `os.link` to place), so the in-window working set is not physically duplicated on the NAS and the hourly refresh re-scans with ~half the syscalls. It falls back to `shutil.copy2` only when `/source` and `/library` are on different filesystems (`st_dev` differs) — on the NAS they share `volume1`, so hardlinks are used.
+**Why:** Enables per-library date-range filtering without modifying the upstream image. seaf-cli sees a clean, filtered `/library` and syncs that to Seafile. Hardlinking keeps that view free of an extra on-disk copy.
 **Do not change because:** If you mount the NAS folder directly to `/library` and bypass the wrapper, the date filter is lost. The staging volume also prevents seaf-cli from uploading every file on the NAS before the filter can run.
 
 ### seaf-cli env vars use SEAF_* prefix, not the obvious names

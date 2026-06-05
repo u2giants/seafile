@@ -3,9 +3,10 @@ from __future__ import annotations
 """
 seaf-entrypoint.py
 
-Staging wrapper for flrnnc/seafile-client. Populates /library from /source,
-optionally limited to files modified within SEAF_INGEST_DAYS days, then
-hands off to the upstream entrypoint at /home/seafile/entrypoint.py.
+Staging wrapper for flrnnc/seafile-client. Hardlinks (or copies, if the source
+and staging volume are on different filesystems) the subset of /source modified
+within SEAF_INGEST_DAYS days into /library, then hands off to the upstream
+entrypoint at /home/seafile/entrypoint.py.
 
 === Settings (set in docker-compose.yml → environment) ===
 
@@ -79,21 +80,67 @@ def resolve_ingest_days(env_days, settings_url: str | None, library_uuid: str | 
     return env_days
 
 
-def populate(days=None):
-    """Populate /library from /source, filtered to files modified within `days` days."""
+def _same_filesystem(a, b):
+    """True if paths a and b live on the same filesystem (hardlinks possible)."""
+    try:
+        return os.stat(a).st_dev == os.stat(b).st_dev
+    except OSError:
+        return False
+
+
+def _place(src, dst, use_links):
+    """Materialise src at dst — hardlink when possible, else copy.
+
+    A hardlink shares the source's inode, so it costs ~0 extra disk and is
+    near-instant regardless of file size. Falls back to a real copy on any
+    error (cross-device link, link-count limits, a FS without hardlinks).
+    """
+    if use_links:
+        try:
+            os.link(src, dst)
+            return
+        except OSError:
+            pass
+    shutil.copy2(src, dst)
+
+
+def scan_source(days):
+    """Return {relpath: mtime} for source files modified within `days` days.
+
+    Uses os.scandir so each file's mtime comes from the directory read itself
+    rather than a second stat() syscall per file — roughly halving the metadata
+    I/O of the hourly rescan over large trees (Character Licensed ≈ 467k files).
+    """
     cutoff = time.time() - days * 86400 if days else 0
+    wanted = {}
+    stack = [SOURCE]
+    while stack:
+        current = stack.pop()
+        try:
+            scanner = os.scandir(current)
+        except OSError:
+            continue
+        with scanner:
+            for entry in scanner:
+                try:
+                    if entry.is_dir(follow_symlinks=False):
+                        stack.append(Path(entry.path))
+                    elif entry.is_file(follow_symlinks=False):
+                        mtime = entry.stat(follow_symlinks=False).st_mtime
+                        if not days or mtime >= cutoff:
+                            wanted[Path(entry.path).relative_to(SOURCE)] = mtime
+                except OSError:
+                    pass
+    return wanted
 
-    wanted = set()
-    for root, _dirs, files in os.walk(SOURCE):
-        rp = Path(root)
-        for fname in files:
-            fp = rp / fname
-            try:
-                if not days or fp.stat().st_mtime >= cutoff:
-                    wanted.add(fp.relative_to(SOURCE))
-            except OSError:
-                pass
 
+def populate(days=None):
+    """Mirror the in-window subset of /source into /library.
+
+    /library is staged via hardlinks (falling back to copies) so the working
+    set is never physically duplicated on the NAS. seaf-cli then syncs /library.
+    """
+    wanted = scan_source(days)
     log.info('Ingest window: %s days — %d qualifying files', days or 'all', len(wanted))
 
     # Remove entries from library that are no longer wanted
@@ -109,21 +156,28 @@ def populate(days=None):
             except OSError:
                 pass
 
-    # Copy new or updated files into library
-    copied = 0
-    for rel in wanted:
+    # Stage new or updated files. A hardlink shares the source inode, so its
+    # mtime equals the source mtime — already-current files are skipped for free
+    # on every refresh. A source file replaced in place carries a newer mtime
+    # than its stale link, so it is re-linked.
+    use_links = _same_filesystem(SOURCE, LIBRARY)
+    placed = 0
+    for rel, src_mtime in wanted.items():
         src = SOURCE / rel
         dst = LIBRARY / rel
-        dst.parent.mkdir(parents=True, exist_ok=True)
         try:
-            src_mtime = src.stat().st_mtime
-            if not dst.exists() or src_mtime > dst.stat().st_mtime:
-                shutil.copy2(src, dst)
-                copied += 1
+            if dst.exists() and dst.stat().st_mtime >= src_mtime:
+                continue
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if dst.exists():
+                dst.unlink()
+            _place(src, dst, use_links)
+            placed += 1
         except OSError as e:
             log.warning('Skip %s: %s', rel, e)
 
-    log.info('Library ready — %d files updated', copied)
+    log.info('Library ready — %d files staged via %s', placed,
+             'hardlink' if use_links else 'copy')
     try:
         Path('/tmp/ingest-status.json').write_text(json.dumps({
             "files": len(wanted),

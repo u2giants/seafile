@@ -24,8 +24,8 @@ Do not use `flrnnc/seafile-client:latest` directly — see Process Supervision b
 Each container runs a two-stage entrypoint:
 
 **Stage 1 — `seaf-entrypoint.py`** (baked into the wrapper image at `/home/seafile/seaf-entrypoint.py`):
-- Filters files from `/source` by mtime (`SEAF_INGEST_DAYS`)
-- Copies qualifying files into `/library` (staging volume); removes stale ones
+- Filters files from `/source` by mtime (`SEAF_INGEST_DAYS`) using a single `os.scandir` pass (mtime read from the directory entry — no extra `stat()` per file)
+- Hardlinks qualifying files into `/library` (staging volume), falling back to a copy only if `/source` and `/library` are on different filesystems; removes stale ones. Hardlinks share the source inode, so the working set is not physically duplicated on the NAS
 - Fetches per-library `ingest_days` from the nas-settings API; falls back to `SEAF_INGEST_DAYS` env var on failure
 - Starts a daemon thread that re-runs the above every hour
 - Launches Stage 2 via `subprocess.run` (not `os.execv` — see Process Supervision)
