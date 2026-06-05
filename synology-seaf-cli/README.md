@@ -116,7 +116,7 @@ Changes take effect on the next hourly refresh, or immediately if the container 
 
 To release a change to `Dockerfile`, `entrypoint.py`, or `seaf-entrypoint.py`:
 
-1. Commit to `main` — GitHub Actions builds and pushes `ghcr.io/u2giants/seafile:seaf-cli-latest`
+1. Commit to `main` — GitHub Actions builds and pushes two tags: `ghcr.io/u2giants/seafile:seaf-cli-latest` (mutable pointer) and `ghcr.io/u2giants/seafile:sha-<commit>` (immutable, for audit + rollback)
 2. Wait for CI to pass: https://github.com/u2giants/seafile/actions
 3. Pull the new image on edgesynology1 and recreate containers via NAS MCP:
 
@@ -131,6 +131,16 @@ echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
 ```
 
 `docker-compose.yml` changes (environment, volumes) only need step 3 — no image rebuild required. Write the updated compose file to `/tmp/seaf-cli-compose.yml` on the NAS first.
+
+### Rollback
+
+To roll back, pin the affected service's `image:` in the compose file to a known-good immutable tag and `up -d` — never rebuild on the NAS or hand-edit container state:
+
+```yaml
+image: ghcr.io/u2giants/seafile:sha-<older-commit>
+```
+
+Find prior tags under the repo's GHCR package or in the GitHub Actions run history (each run's commit SHA is the `sha-` tag it published).
 
 ## Re-deploy after container removal
 

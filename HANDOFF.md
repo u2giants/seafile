@@ -1,66 +1,66 @@
 # HANDOFF
 
-## What is fully done
+Last updated: 2026-06-05. Delete this file once NAS sync is restored **and** the 8 designers are onboarded.
 
-### NAS seaf-cli containers (edgesynology1)
-Both containers are running and healthy on edgesynology1 with `ghcr.io/u2giants/seafile:seaf-cli-latest`:
-- `seaf-cli-char-licensed` — Character Licensed library, 730-day ingest window, 2g memory, cpu_shares 512
-- `seaf-cli-generic-decor` — Generic Decor library, 730-day ingest window, 512m memory, cpu_shares 512
-
-The wrapper image (built from `synology-seaf-cli/`) fixes three upstream bugs in `flrnnc/seafile-client` and adds tini as PID 1, a watchdog loop, correct healthcheck exit codes, and stale PID/socket cleanup on `--force-recreate`. See `synology-seaf-cli/README.md` for full details.
-
-### Windows workstation setup scripts
-`windows-workstation/` is fully built and ready to deploy:
-- `setup.ps1` — one-shot installer run as Administrator; handles PopDAM agent + Docker Desktop check + seaf-cli containers + login autostart
-- `docker-compose.yml` — identical service config to the NAS version, but sources mounted via CIFS named volumes (`//edgesynology1/mac/Decor/…`) instead of bind mounts
-- `README.md` — machine replacement instructions for Albert
-
-**These scripts have not been run on the Windows machine yet.** They are ready to use.
-
-### Documentation
-All docs updated to reflect current state. No stale content.
+A new developer/AI should read `AGENTS.md` first, then this file for live state.
 
 ---
 
-## What is NOT done yet
+## What this session did (2026-06-05)
 
-### 1. Windows workstation cutover (optional — Albert's call)
+1. **Fixed seaf-cli staging resource usage** (`synology-seaf-cli/seaf-entrypoint.py`, commit `5274587`):
+   - `/library` is now populated with **hardlinks** (`os.link`) instead of `shutil.copy2`, so the in-window working set is no longer physically duplicated on the NAS. Falls back to copy only if `/source` and `/library` are on different filesystems.
+   - File selection is a single `os.scandir` pass (mtime from the dir entry) instead of `os.walk` + a `stat()` per file — ~half the metadata I/O on the hourly refresh of the ~467k-file Character Licensed tree.
+   - Validated with a local 15-check harness (date filter, hardlink creation, idempotent rerun, aged-out removal, in-place replace → relink, copy fallback). All passed.
+2. **Brought CI in line with the org CI/CD rules** (`.github/workflows/seaf-cli-image.yml`, commits `1c9fd18`, `546e0d4`, `84fa5d6`):
+   - Publishes an immutable `sha-<commit>` tag alongside `seaf-cli-latest` (audit + rollback).
+   - Added `concurrency: cancel-in-progress`, gha Docker layer cache, and `setup-buildx-action` (required for the gha cache export — the first attempt failed without it).
+   - Bumped all actions to Node 24 majors (checkout v6, setup-python v6, buildx v4, login v4, build-push v7).
+3. **Documentation** (this session): rewrote the stale parts of `AGENTS.md`, `README.md`, `CLAUDE.md`, `synology-seaf-cli/README.md`, and two spots in `seafile-server/docs/`. Documented the no-deployment-platform model as a §25 exception. Recorded the container-removal incident.
 
-**What:** Move seaf-cli containers from the NAS to the Windows rendering machine to reduce NAS CPU load.
-
-**Why not done yet:** Requires confirming (a) Docker Desktop is installed on the Windows machine, and (b) what NAS account to use for CIFS credentials. Albert hasn't confirmed Docker Desktop is there.
-
-**Exact next action:**
-1. Confirm Docker Desktop is installed on the Windows machine (if not, install it: https://www.docker.com/products/docker-desktop/ — enable "Start Docker Desktop when you log in")
-2. Identify a Synology local account with read access to the `mac` shared folder on edgesynology1 for the CIFS mounts — create one if needed via Synology Control Panel → User & Group
-3. On the Windows machine: open PowerShell as Administrator, navigate to `windows-workstation/`, run `.\setup.ps1`
-4. Enter credentials when prompted: Seafile = `nas-sync@popcre.com` + password from `/opt/seafile/CREDENTIALS.txt` on VPS; NAS = the account from step 2
-5. Verify `docker ps` shows both containers healthy and logs show "synchronized"
-6. Tell Claude to stop the NAS seaf-cli containers
-
-**Risk:** On first start, seaf-daemon SHA1-hashes every file to build its sync tree. For the Character Licensed library (~467k files), expect 200-300% CPU for several hours. This is normal.
-
-**Risk:** If `edgesynology1` doesn't resolve from inside Docker Desktop's WSL2 VM, the CIFS mounts will fail. Fix: edit `C:\ProgramData\seaf-cli\docker-compose.yml` and replace `edgesynology1` with the NAS IP address.
-
-### 2. Designer user accounts (pre-existing, unrelated to seaf-cli work)
-
-8 São Paulo designers still need Seafile library access. The system is ready; they just haven't been invited.
-
-**Exact next action:** Send designers `https://seafile.designflow.app`. They click "Sign in with Microsoft" and log in with their POP Creations M365 account — accounts create automatically. Albert then shares Character Licensed and Generic Decor libraries with each: open library → Share icon → Share to User → designer email → Read/Write.
+All of the above is committed and pushed to `main`. CI is green; the current code is published as `ghcr.io/u2giants/seafile:sha-84fa5d6...` and `:seaf-cli-latest`.
 
 ---
 
-## Decisions made and why
+## Current live state
 
-- **seaf-cli on Windows uses CIFS named volumes, not bind mounts** — Docker Desktop on Windows can't bind-mount UNC paths (`\\server\share`). CIFS named volumes mount via the Linux CIFS stack inside WSL2 and work reliably over LAN.
-- **One PowerShell script bundles PopDAM + seaf-cli** — Albert's explicit goal was "one thing to install" for machine recovery. `setup.ps1` is idempotent (each step checks if already done), so re-running on an existing machine is safe.
-- **seaf-cli on Windows or NAS — not both** — two seaf-cli processes syncing the same library concurrently is unsupported and would cause conflicts. The cutover requires stopping the old deployment.
-- **CPU spike on first start is unavoidable** — seaf-daemon must SHA1-hash every file byte. SEAF_UPLOAD_LIMIT/SEAF_DOWNLOAD_LIMIT only throttle network, not hashing. This is inherent to seaf-cli's design.
+- **NAS sync is DOWN.** Both `seaf-cli-char-licensed` and `seaf-cli-generic-decor` have been **removed** from edgesynology1 (not stopped — `docker ps -a` lists neither). This was discovered this session; the cause is unknown (no docker events in the last 72h). New/changed design files are NOT being pushed to Seafile right now.
+- **No data lost.** The Seafile libraries, their S3 data, and the Docker volumes (`seaf-cli-*-data`, `seaf-cli-*-staging`) are intact. The `seaf-cli-latest` image is still on the NAS. Re-deploying will not trigger a full re-hash/re-upload.
+- **VPS Seafile server is up** at `https://seafile.designflow.app` (Seafile Pro `13.0-latest`, plus MariaDB, Redis, Caddy, nas-settings).
 
 ---
 
-## Context that exists only in this conversation
+## What is NOT done
 
-- The Windows rendering machine already runs the PopDAM Windows Agent as a Windows Scheduled Task ("PopDAM Windows Render Agent"). `setup.ps1` detects this and skips the PopDAM install step.
-- The Synology NAS has two NICs. Albert asked about dedicating one to seaf-cli traffic. Decision: not worth doing. seaf-cli only reads from the NAS during the hourly staging pass; the rest of the time it's uploading to the internet. No NIC contention in practice.
-- NAS seaf-cli on the NAS uses `cpu_shares: 512` (not `cpus:`) because Synology's kernel does not support CFS CPU quota cgroups. Hard `cpus` limits were tried and returned "NanoCPUs can not be set". On Windows, this is not an issue — Docker Desktop on WSL2 supports both.
+1. **Restore NAS sync (or cut over to Windows)** — not started. The new hardlink/scandir image is built and waiting; nothing runs it until containers are re-deployed.
+2. **Onboard 8 São Paulo designers** — not started. System is ready (M365 SSO auto-creates accounts); they just need the link and library shares.
+3. **Windows workstation cutover** — optional alternative to #1; scripts are ready but never run (needs Docker Desktop confirmed on the Windows machine).
+
+---
+
+## Exact next action
+
+Decide between restoring on the NAS vs. the Windows cutover, then:
+
+**To restore on the NAS** (fastest path back to working sync):
+1. Investigate why the containers vanished — check Synology Container Manager / Package Center logs and recent NAS reboots/upgrades. (Optional but recommended so it doesn't recur.)
+2. Re-write `synology-seaf-cli/docker-compose.yml` to `/tmp/seaf-cli-compose.yml` on edgesynology1 and `/tmp/.env` with `NAS_SYNC_PASSWORD` (from `/opt/seafile/CREDENTIALS.txt`). Use the NAS MCP base64+tee pattern (see AGENTS.md).
+3. `docker compose -f /tmp/seaf-cli-compose.yml --env-file /tmp/.env up -d` (base64-encoded via NAS MCP; docker is at `/var/packages/ContainerManager/target/usr/bin/docker`).
+4. Verify both containers report healthy and logs show "synchronized".
+
+**To onboard designers** (independent of the above):
+- Send `https://seafile.designflow.app`; each signs in with their POP Creations M365 account; then share Character Licensed + Generic Decor with each at Read/Write.
+
+---
+
+## Decisions made this session, and why
+
+- **Hardlinks over copies for staging** — eliminates a second physical copy of the working set; seaf-cli only reads `/library`, so a shared inode is safe. Copy fallback preserves correctness on cross-filesystem setups.
+- **`main` only, no branches, no PRs** — Albert confirmed this repo's workflow. (An earlier branch+PR this session was reverted and the work moved to `main`.)
+- **§25 CI/CD exception** — there is no deployment platform (Synology NAS + direct-Docker VPS), so CI builds/publishes only and deployment stays a manual repo-driven pull. CI must never SSH into production.
+- **Kept `FROM flrnnc/seafile-client:latest` unpinned** — community fixes flow in automatically; full reproducibility (digest pin) is logged as optional Pending Work.
+
+## Known risks / unknowns
+
+- **Root cause of the container removal is unknown.** If it recurs after re-deploy, the `restart: unless-stopped` policy is not enough; investigate Container Manager behavior on NAS reboot/upgrade.
+- **seaf-cli is 7.0.10** (old, from the community base) against a 13.0 server. Works today via protocol back-compat; no newer community image exists. Not a blocker.

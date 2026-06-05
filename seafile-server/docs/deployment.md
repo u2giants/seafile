@@ -187,8 +187,11 @@ If renewal fails: verify DNS still resolves correctly and port 80 is reachable (
 
 ## Remaining Work
 
+### Restore NAS sync — the seaf-cli containers were removed (2026-06-05)
+As of 2026-06-05 both NAS seaf-cli containers are **gone** from edgesynology1 (removed, not stopped — `docker ps -a` lists neither). Sync is down. The data/staging volumes and the image survive, so re-deploying `synology-seaf-cli/docker-compose.yml` restores sync without a full re-hash. See AGENTS.md → Critical Incident Log. Decide between restoring on the NAS or doing the Windows cutover below — never run both.
+
 ### Windows workstation cutover (optional)
-`windows-workstation/setup.ps1` is ready. Run it on the Windows rendering machine to move the seaf-cli upload work off the NAS. Not required — NAS containers are healthy. See Windows workstation deployment above.
+`windows-workstation/setup.ps1` is ready. Run it on the Windows rendering machine to move the seaf-cli upload work off the NAS. See Windows workstation deployment above. Only one host may run seaf-cli at a time.
 
 ### Designer user accounts
 Send designers `https://seafile.designflow.app` — accounts are created automatically on first M365 SSO login (requires a POP Creations Microsoft account in the tenant). Albert then shares the relevant libraries via the web UI.

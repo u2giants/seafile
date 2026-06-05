@@ -42,11 +42,14 @@ windows-workstation/          Windows rendering machine — seaf-cli + PopDAM ag
 | | |
 |---|---|
 | URL | https://seafile.designflow.app |
-| Server | Linode VPS · 172.233.14.233 · Ubuntu 24.04 |
+| Server | Linode VPS · 172.233.14.233 · Ubuntu 24.04 · Seafile Pro `13.0-latest` |
 | Admin | albert@popcre.com via M365 SSO |
-| NAS sync image | `ghcr.io/u2giants/seafile:seaf-cli-latest` |
+| NAS sync image | `ghcr.io/u2giants/seafile:seaf-cli-latest` (+ immutable `:sha-<commit>` per build) |
+| Branch model | `main` only — no branches, no PRs |
 | Credentials | `/opt/seafile/CREDENTIALS.txt` on the VPS (root-only, never in this repo) |
 | GitHub | https://github.com/u2giants/seafile |
+
+> **Current status (2026-06-05):** NAS → S3 sync is **down** — both seaf-cli containers were removed from edgesynology1 (data intact). See `AGENTS.md` → Critical Incident Log / Pending Work.
 
 ## AI Sessions
 

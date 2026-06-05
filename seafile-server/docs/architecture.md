@@ -89,8 +89,9 @@ Each container follows this flow on startup and hourly:
     │  On Windows:  CIFS named volume from //edgesynology1/mac/Decor/… over LAN
     │
     ▼ seaf-entrypoint.py
-    │  – filters files by mtime (SEAF_INGEST_DAYS)
-    │  – copies qualifying files to /library staging volume
+    │  – selects files by mtime (SEAF_INGEST_DAYS) in one os.scandir pass
+    │  – hardlinks qualifying files into /library staging volume
+    │    (copy2 fallback only if /source and /library are on different filesystems)
     │  – removes stale files from /library
     │  – starts hourly refresh thread (kept alive by subprocess.run below)
     ▼
