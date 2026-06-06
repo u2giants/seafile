@@ -50,6 +50,7 @@ LIBRARIES = [
 
 SETTINGS_PATH = Path("/data/settings.json")
 STATUS_PATH = Path("/data/status.json")
+COMMANDS_PATH = Path("/data/commands.json")
 DEFAULT_INGEST_DAYS = 730
 STATUS_STALE_SECONDS = 120  # containers reporting older than this are shown as offline
 
@@ -135,6 +136,22 @@ def load_status() -> dict:
 def save_status(data: dict) -> None:
     STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(STATUS_PATH, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def load_commands() -> dict:
+    if COMMANDS_PATH.exists():
+        try:
+            with open(COMMANDS_PATH) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def save_commands(data: dict) -> None:
+    COMMANDS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(COMMANDS_PATH, "w") as f:
         json.dump(data, f, indent=2)
 
 
@@ -236,7 +253,13 @@ def api_status_post():
     status = load_status()
     status[container_id] = data
     save_status(status)
-    return jsonify({"ok": True})
+
+    commands = load_commands()
+    command = commands.pop(container_id, None)
+    if command:
+        save_commands(commands)
+
+    return jsonify({"ok": True, **({"command": command} if command else {})})
 
 
 @app.route("/api/status-data")
@@ -261,6 +284,22 @@ def api_status_data():
                 pass
         result[cid] = {**entry, "stale": stale, "seconds_ago": seconds_ago}
     return jsonify(result)
+
+
+@app.route("/api/command", methods=["POST"])
+def api_command():
+    """Queue a pause or resume command for a seaf-cli container. Requires admin session."""
+    if not is_seafile_admin():
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    container_id = data.get("container_id", "")
+    command = data.get("command", "")
+    if not container_id or command not in ("pause", "resume"):
+        return jsonify({"error": "invalid request"}), 400
+    commands = load_commands()
+    commands[container_id] = command
+    save_commands(commands)
+    return jsonify({"ok": True})
 
 
 @app.route("/api/settings")

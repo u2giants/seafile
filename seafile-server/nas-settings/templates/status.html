@@ -113,20 +113,37 @@
       margin-bottom: 16px;
     }
 
-    .status-badge.ok    { background: #f0fdf4; color: #15803d; }
-    .status-badge.busy  { background: #fffbeb; color: #b45309; }
-    .status-badge.error { background: #fef2f2; color: #b91c1c; }
-    .status-badge.idle  { background: #f9fafb; color: #6b7280; }
+    .status-badge.ok     { background: #f0fdf4; color: #15803d; }
+    .status-badge.busy   { background: #fffbeb; color: #b45309; }
+    .status-badge.error  { background: #fef2f2; color: #b91c1c; }
+    .status-badge.idle   { background: #f9fafb; color: #6b7280; }
+    .status-badge.paused { background: #eff6ff; color: #1d4ed8; }
 
     .dot {
       width: 9px; height: 9px;
       border-radius: 50%;
       flex-shrink: 0;
     }
-    .dot.ok    { background: #22c55e; }
-    .dot.busy  { background: #f59e0b; animation: pulse 1.2s ease-in-out infinite; }
-    .dot.error { background: #ef4444; }
-    .dot.idle  { background: #9ca3af; }
+    .dot.ok     { background: #22c55e; }
+    .dot.busy   { background: #f59e0b; animation: pulse 1.2s ease-in-out infinite; }
+    .dot.error  { background: #ef4444; }
+    .dot.idle   { background: #9ca3af; }
+    .dot.paused { background: #3b82f6; }
+
+    .btn-pause, .btn-resume {
+      padding: 7px 18px;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .btn-pause  { background: #f3f4f6; color: #374151; }
+    .btn-pause:hover  { background: #e5e7eb; }
+    .btn-resume { background: #eff6ff; color: #1d4ed8; }
+    .btn-resume:hover { background: #dbeafe; }
+    .btn-pause:disabled, .btn-resume:disabled { opacity: 0.5; cursor: default; }
 
     @keyframes pulse {
       0%, 100% { opacity: 1; }
@@ -212,7 +229,10 @@
             <h2>{{ lib.name }}</h2>
             <span class="uuid">{{ lib.uuid }}</span>
           </div>
-          <div class="last-seen" id="seen-{{ lib.id }}">Waiting for first report…</div>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div id="ctrl-{{ lib.id }}"></div>
+            <div class="last-seen" id="seen-{{ lib.id }}">Waiting for first report…</div>
+          </div>
         </div>
         <div id="body-{{ lib.id }}">
           <div class="no-data">No data yet. Container may be starting up.</div>
@@ -246,8 +266,9 @@
       return d + " days";
     }
 
-    function badgeClass(state, stale) {
+    function badgeClass(entry, state, stale) {
       if (stale) return "idle";
+      if (entry.paused) return "paused";
       if (state === "synchronized") return "ok";
       if (state === "uploading" || state === "downloading") return "busy";
       if (state === "error") return "error";
@@ -257,6 +278,7 @@
     function badgeLabel(entry, state, stale) {
       if (stale) return "Offline";
       if (!entry.daemon_alive) return "Daemon stopped";
+      if (entry.paused) return "Paused";
       if (state === "synchronized") return "Synchronized";
       if (state === "uploading") {
         const pct = entry.repos[0]?.progress_pct;
@@ -271,6 +293,22 @@
       if (state === "waiting") return "Waiting to sync";
       if (!state) return "Starting up…";
       return state;
+    }
+
+    async function sendCommand(containerId, command, btn) {
+      btn.disabled = true;
+      try {
+        const resp = await fetch("{{ url_for('api_command') }}", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({container_id: containerId, command}),
+        });
+        if (!resp.ok) throw new Error("server error");
+      } catch (e) {
+        alert("Failed to send command. Try again.");
+      } finally {
+        btn.disabled = false;
+      }
     }
 
     function renderCard(lib, data) {
@@ -289,9 +327,20 @@
       seenEl.textContent = "Last seen: " + ago(secsAgo);
       seenEl.className   = "last-seen" + (stale ? " stale" : "");
 
+      const ctrlEl = document.getElementById("ctrl-" + lib.id);
+      if (!stale && data.daemon_alive) {
+        if (data.paused) {
+          ctrlEl.innerHTML = `<button class="btn-resume" onclick="sendCommand('${lib.id}','resume',this)">Resume</button>`;
+        } else {
+          ctrlEl.innerHTML = `<button class="btn-pause" onclick="sendCommand('${lib.id}','pause',this)">Pause</button>`;
+        }
+      } else {
+        ctrlEl.innerHTML = "";
+      }
+
       const repo  = (data.repos && data.repos[0]) || null;
       const state = repo ? repo.state : null;
-      const cls   = badgeClass(state, stale);
+      const cls   = badgeClass(data, state, stale);
       const label = badgeLabel(data, state, stale);
 
       let progressBar = "";

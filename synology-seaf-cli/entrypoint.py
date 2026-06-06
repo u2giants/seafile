@@ -300,12 +300,20 @@ class Client:
             except Exception:
                 pass
 
+        paused = False
+        if hasattr(self, "rpc"):
+            try:
+                paused = not self.rpc.is_auto_sync_enabled()
+            except Exception:
+                pass
+
         return {
             "container_id": os.environ.get("HOSTNAME", "unknown"),
             "library_uuid": os.environ.get("SEAF_LIBRARY", ""),
             "reported_at": datetime.datetime.utcnow().isoformat() + "Z",
             "daemon_pid": pid,
             "daemon_alive": daemon_alive,
+            "paused": paused,
             "repos": repos,
             "staging_files": ingest.get("files"),
             "last_ingest_at": ingest.get("last_ingest_at"),
@@ -326,8 +334,15 @@ class Client:
                     req = urllib.request.Request(
                         status_url, data=payload, headers=headers, method="POST"
                     )
-                    with urllib.request.urlopen(req, timeout=10):
-                        pass
+                    with urllib.request.urlopen(req, timeout=10) as resp:
+                        body = json.loads(resp.read().decode())
+                        cmd = body.get("command")
+                        if cmd == "pause":
+                            subprocess.run(["seaf-cli", "pause"], timeout=10, capture_output=True)
+                            logger.info("Paused sync on server command")
+                        elif cmd == "resume":
+                            subprocess.run(["seaf-cli", "resume"], timeout=10, capture_output=True)
+                            logger.info("Resumed sync on server command")
                 except Exception:
                     pass  # best-effort; never crash the container
                 time.sleep(30)
