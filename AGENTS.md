@@ -183,7 +183,7 @@ This is not an application with a custom data model. The data model is Seafile's
 | Character Licensed | `177cf9de-3066-482e-956a-7ae8d8786c6d` | `/volume1/mac/Decor/Character Licensed` | ⏸ Not syncing — seaf-cli container removed (see Critical Incident Log) |
 | Generic Decor | `1b116ab7-d66b-4411-a691-21f34eadb731` | `/volume1/mac/Decor/Generic Decor` | ⏸ Not syncing — seaf-cli container removed |
 
-These are the only two libraries. The Seafile libraries and their data in S3 are intact; only the NAS-side push containers are gone.
+These are the only two libraries.
 
 ### Accounts
 
@@ -215,12 +215,12 @@ These containers are defined by the upstream Seafile Docker Compose. Their names
 
 These follow the standard naming convention. Only run these OR the Windows containers — not both.
 
-**Current state (2026-06-05): both containers have been REMOVED from edgesynology1** — `docker ps -a` lists neither (a stopped container would still appear, so they were deleted, not stopped). The data/staging Docker volumes (`seaf-cli-*-data`, `seaf-cli-*-staging`) and the `ghcr.io/u2giants/seafile:seaf-cli-latest` image are still present, so sync can be restored by re-deploying the compose file. See the Critical Incident Log and Pending Work.
+**Current state (2026-06-06): both containers are running healthy on edgesynology1** — verified via `docker ps`.
 
 | Container name | NAS path | Seafile library | UUID | Status |
 |---------------|----------|----------------|------|--------|
-| `seaf-cli-char-licensed` | `/volume1/mac/Decor/Character Licensed` | Character Licensed | `177cf9de-3066-482e-956a-7ae8d8786c6d` | ❌ Removed (volumes intact) |
-| `seaf-cli-generic-decor` | `/volume1/mac/Decor/Generic Decor` | Generic Decor | `1b116ab7-d66b-4411-a691-21f34eadb731` | ❌ Removed (volumes intact) |
+| `seaf-cli-char-licensed` | `/volume1/mac/Decor/Character Licensed` | Character Licensed | `177cf9de-3066-482e-956a-7ae8d8786c6d` | ✅ Running (verified 2026-06-06) |
+| `seaf-cli-generic-decor` | `/volume1/mac/Decor/Generic Decor` | Generic Decor | `1b116ab7-d66b-4411-a691-21f34eadb731` | ✅ Running (verified 2026-06-06) |
 
 ### Windows Workstation Containers (alternative deployment — not yet active)
 
@@ -491,7 +491,6 @@ The org-wide CI/CD rules assume a deployment platform (Coolify) that GitHub Acti
 
 | Status | Item | Next action |
 |--------|------|-------------|
-| 🔴 open | **Restore NAS sync (or cut over to Windows)** — both seaf-cli containers are removed; sync is down | Re-deploy `synology-seaf-cli/docker-compose.yml` on edgesynology1 via NAS MCP, OR do the Windows cutover. Investigate why they vanished first. |
 | 🟡 open | **Designer user accounts (8 people)** | Send `https://seafile.designflow.app`; they sign in with M365 SSO (accounts auto-create); then share Character Licensed + Generic Decor with each at Read/Write |
 | 🟡 open | **Windows workstation cutover** (optional, replaces NAS sync) | (1) confirm Docker Desktop on the Windows machine, (2) run `setup.ps1` as Admin, (3) verify containers healthy, (4) ensure NAS containers are not also running. See `windows-workstation/README.md` |
 | 🟢 optional | **Pin the seaf-cli base image to a digest** for fully reproducible builds | Replace `FROM flrnnc/seafile-client:latest` with a digest; document the bump procedure (see Idiosyncratic Decisions) |
@@ -503,3 +502,7 @@ The org-wide CI/CD rules assume a deployment platform (Coolify) that GitHub Acti
 - CI: immutable `sha-<commit>` image tags, `concurrency` cancel-in-progress, gha layer cache + buildx — commits `1c9fd18`, `546e0d4`
 - CI actions bumped to Node 24 majors (checkout v6, setup-python v6, buildx v4, login v4, build-push v7) — commit `84fa5d6`
 - §25 CI/CD exception documented; docs brought in line with actual state
+
+### Done this session (2026-06-06)
+- Pause/Resume added to sync status dashboard — commit `21c4a70`
+- NAS container status corrected (both were running; docs said removed)
