@@ -1,8 +1,9 @@
 services:
   nas-settings:
-    build:
-      context: ./nas-settings
-    image: nas-settings:local
+    # CI-built + published by .github/workflows/nas-settings-image.yml.
+    # Deploy = pull this published image (§25 manual repo-driven path); do NOT
+    # build on the VPS. Roll back by pinning a nas-settings-sha-<commit> tag.
+    image: ghcr.io/u2giants/seafile:nas-settings-latest
     container_name: nas-settings
     restart: unless-stopped
     volumes:

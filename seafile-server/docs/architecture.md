@@ -73,7 +73,7 @@ Image: `redis:latest`
 Seahub session cache. No persistence configured — acceptable for a cache. Restarts empty; sessions are re-established from the database.
 
 ### nas-settings
-Image: `nas-settings:local` (built locally from `seafile-server/nas-settings/`)
+Image: `ghcr.io/u2giants/seafile:nas-settings-latest` (CI-built + published from `seafile-server/nas-settings/`)
 
 Flask app that gives the Seafile web UI a GUI for the seaf-cli client at `/nas-settings/`: a live status Dashboard plus Controls (pause/resume/restart/stop), Config (any `seaf-cli config` key), Libraries (list/list-remote/create/desync), and the ingest-window Settings. Auth delegates to Seafile: the app calls Seafile's internal admin API on every request to verify the `sessionid` cookie belongs to a system admin — no separate credentials. Persists state to a named Docker volume (`nas-settings-data`). Managed by `nas-settings.yml`, deployed separately from the main stack (not in `COMPOSE_FILE`).
 

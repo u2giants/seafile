@@ -95,17 +95,24 @@ Persisted under `/data/` inside the `nas-settings-data` Docker volume:
 
 ## Build and deploy
 
-```bash
-# Build (run from seafile-server/ — the build context is ./nas-settings)
-cd /home/ai/seafile-repo/seafile-server
-docker compose -f nas-settings.yml build nas-settings
+The image is **built by CI** (`.github/workflows/nas-settings-image.yml`) and published to
+GHCR as `ghcr.io/u2giants/seafile:nas-settings-latest` (+ `:nas-settings-sha-<commit>`).
+Deploy = **pull** that image — do not build on the VPS (§25 model; see AGENTS.md → Deployment).
 
-# Deploy / restart
+```bash
+# 1. Commit changes under seafile-server/nas-settings/ to main; wait for the
+#    "nas-settings image" workflow to publish: https://github.com/u2giants/seafile/actions
+# 2. Pull + recreate on the VPS:
 cd /opt/seafile
+docker compose -f seafile-server.yml -f caddy.yml \
+  -f /home/ai/seafile-repo/seafile-server/nas-settings.yml \
+  pull nas-settings
 docker compose -f seafile-server.yml -f caddy.yml \
   -f /home/ai/seafile-repo/seafile-server/nas-settings.yml \
   up -d nas-settings
 ```
+
+Rollback: pin `image:` in `nas-settings.yml` to a prior `:nas-settings-sha-<commit>` and `up -d`.
 
 ## Environment variables
 

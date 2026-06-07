@@ -25,21 +25,29 @@ All containers have `restart: unless-stopped` — they come back automatically a
 
 ## nas-settings Panel
 
-The `nas-settings` container is deployed from `seafile-server/nas-settings.yml` in the repo (not included in `COMPOSE_FILE` in `.env`). It is managed separately:
+The `nas-settings` container runs the **CI-built** image `ghcr.io/u2giants/seafile:nas-settings-latest` (built + published by `.github/workflows/nas-settings-image.yml`). It is deployed from `seafile-server/nas-settings.yml` in the repo (not in `COMPOSE_FILE`) and managed separately. **Do not build it on the VPS** — pull the published image (§25 model; see AGENTS.md → Deployment).
+
+### Release a code change to nas-settings
+
+When anything under `seafile-server/nas-settings/` changes:
+
+1. Commit to `main` — GitHub Actions (`nas-settings image`) tests, builds, and pushes `nas-settings-latest` + `nas-settings-sha-<commit>` to GHCR.
+2. Wait for CI: https://github.com/u2giants/seafile/actions (workflow: `nas-settings image`).
+3. Pull and recreate on the VPS:
 
 ```bash
-# Start / restart
 cd /opt/seafile && docker compose \
   -f seafile-server.yml -f caddy.yml \
   -f /home/ai/seafile-repo/seafile-server/nas-settings.yml \
+  pull nas-settings && docker compose \
+  -f seafile-server.yml -f caddy.yml \
+  -f /home/ai/seafile-repo/seafile-server/nas-settings.yml \
   up -d nas-settings
-
-# Rebuild after code changes to seafile-server/nas-settings/
-cd /home/ai/seafile-repo/seafile-server && docker compose -f nas-settings.yml build nas-settings
-# Then restart as above
 ```
 
-**Note:** The build context in `nas-settings.yml` is `./nas-settings` (relative to the compose file). Run the build from the `seafile-server/` directory, not from `/opt/seafile/`.
+**Rollback:** pin `image:` in `nas-settings.yml` to a prior `ghcr.io/u2giants/seafile:nas-settings-sha-<older-commit>` and `up -d` — never rebuild on the host.
+
+**Note:** Seahub template overrides (`seafile-server/custom-templates/`) are *not* part of this image — they deploy by copying into the Seahub custom dir + `docker restart seafile` (see `custom-templates/README.md`).
 
 ## seaf-cli Containers
 

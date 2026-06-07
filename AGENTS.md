@@ -9,7 +9,7 @@ POP Creations runs a 28TB design file library on two Synology NAS devices in a N
 3. **nas-settings** — a Flask panel on the VPS (`/nas-settings/`) that gives the Seafile web UI a GUI for the seaf-cli client on the NAS: live status, sync controls (pause/resume/restart/stop), daemon config, and library management (list/list-remote/create/desync), plus the ingest window. The server can't reach the NAS, so it queues commands by library UUID and the containers pick them up on their 30 s status poll.
 4. File data is stored in **Linode Object Storage (São Paulo, br-gru-1)**, not on the VPS disk. The VPS only holds metadata (MariaDB), session cache (Redis), and config.
 
-This is mostly an **infrastructure configuration repo**. The only build artifact is the seaf-cli wrapper image (`.github/workflows/seaf-cli-image.yml` → GHCR); `nas-settings` is built locally on the VPS. Everything else runs upstream images via Docker Compose — the deployment artifacts are the compose files and scripts themselves.
+This is mostly an **infrastructure configuration repo**. Two images are CI-built and published to GHCR: the seaf-cli wrapper (`.github/workflows/seaf-cli-image.yml`) and the nas-settings panel (`.github/workflows/nas-settings-image.yml`). Everything else runs upstream images via Docker Compose — the deployment artifacts are the compose files and scripts themselves.
 
 ---
 
@@ -36,7 +36,8 @@ seafile-repo/                    Root — GitHub: github.com/u2giants/seafile
 ├── .cursorignore
 │
 ├── .github/workflows/
-│   └── seaf-cli-image.yml       CI: lint + build + push the seaf-cli wrapper image to GHCR
+│   ├── seaf-cli-image.yml       CI: lint + test + build + push the seaf-cli wrapper image to GHCR
+│   └── nas-settings-image.yml   CI: lint + test + build + push the nas-settings panel image to GHCR
 │
 ├── seafile-server/              VPS configuration — live at seafile.designflow.app
 │   ├── seafile-server.yml       Docker Compose: Seafile Pro + MariaDB + Redis
@@ -47,7 +48,7 @@ seafile-repo/                    Root — GitHub: github.com/u2giants/seafile
 │   ├── CONFIGURE_OAUTH.sh       One-time OAuth setup (already run — DO NOT RUN AGAIN)
 │   ├── CREATE_NAS_SYNC_ACCOUNT.sh  One-time machine account creation (already run — DO NOT RUN AGAIN)
 │   ├── nas-settings/            Flask app (app.py + templates) — seaf-cli control panel + status/command API (test_app.py)
-│   │   └── Dockerfile           Built locally on the VPS as nas-settings:local (not in CI)
+│   │   └── Dockerfile           Built + published by CI to ghcr.io/u2giants/seafile:nas-settings-latest
 │   ├── custom-templates/        Seahub template override — injects the nas-settings link into the sysadmin sidebar
 │   └── docs/                    seafile-server component docs (see "Documentation map" below)
 │       ├── architecture.md      Containers, networking, storage architecture
@@ -126,9 +127,9 @@ This project is original infrastructure config (not a fork). No upstream source 
 - As of 2026-06: 13.0 is the current major; the server tracks it automatically.
 
 ### If you need to deploy or change the nas-settings panel:
-- Code lives in `seafile-server/nas-settings/` (Flask `app.py` + templates); compose in `seafile-server/nas-settings.yml`. It is built **locally on the VPS** as `nas-settings:local` — it is NOT in CI.
+- Code lives in `seafile-server/nas-settings/` (Flask `app.py` + templates); compose in `seafile-server/nas-settings.yml`. Commit to `main` → CI (`nas-settings image`) tests + builds + publishes `ghcr.io/u2giants/seafile:nas-settings-latest` (+ `:nas-settings-sha-<commit>`). Deploy by **pulling** that image on the VPS — do not `docker compose build` on the host (§25 exception model).
 - Build + deploy steps are in `seafile-server/nas-settings/README.md`.
-- The sidebar link comes from `seafile-server/custom-templates/` (see Core Modification Inventory).
+- The sidebar links come from `seafile-server/custom-templates/` (see Core Modification Inventory).
 
 ### If you need to manage DNS:
 - Zone: `designflow.app` · Zone ID: `921eb133a3f7d5802780445b283f84ce`
@@ -160,7 +161,7 @@ This project is original infrastructure config (not a fork). No upstream source 
 |------|--------------|--------------|
 | Change seaf-cli staging/daemon logic | `synology-seaf-cli/seaf-entrypoint.py`, `synology-seaf-cli/entrypoint.py` (rebuilds image via CI) | the upstream `flrnnc/seafile-client` behavior |
 | Add/modify seaf-cli sync container | `synology-seaf-cli/docker-compose.yml` (NAS) or `windows-workstation/docker-compose.yml` (Windows) | both at once — only one host runs seaf-cli |
-| Change the CI build/publish | `.github/workflows/seaf-cli-image.yml` | add SSH/deploy steps — see Deployment |
+| Change the CI build/publish | `.github/workflows/seaf-cli-image.yml`, `.github/workflows/nas-settings-image.yml` | add SSH/deploy steps — see Deployment |
 | Change Seafile/MariaDB/Redis container config | `seafile-server/seafile-server.yml` | container names (Seafile-internal) |
 | Change reverse proxy (TLS, routing) | `seafile-server/caddy.yml` | enable Cloudflare proxy on the host |
 | Change nas-settings panel | `seafile-server/nas-settings/app.py` + `templates/`, `seafile-server/nas-settings.yml` | — |
@@ -209,7 +210,7 @@ These containers are defined by the upstream Seafile Docker Compose. Their names
 | `seafile-mysql` | MariaDB 10.11 — metadata database | `seafile-server/seafile-server.yml` |
 | `seafile-redis` | Redis — session cache | `seafile-server/seafile-server.yml` |
 | `seafile-caddy` | Caddy reverse proxy — TLS termination | `seafile-server/caddy.yml` |
-| `nas-settings` | Flask seaf-cli control panel + status/command API, image `nas-settings:local` (built on the VPS) | `seafile-server/nas-settings.yml` |
+| `nas-settings` | Flask seaf-cli control panel + status/command API, image `ghcr.io/u2giants/seafile:nas-settings-latest` (CI-built) | `seafile-server/nas-settings.yml` |
 
 ### NAS Containers (edgesynology1 — 192.168.3.100)
 
@@ -416,8 +417,9 @@ GitHub Actions stores **no** deploy or SSH secrets — CI only needs the built-i
 | Branch model | `main` only — commit straight to main, no feature branches, no PRs |
 | seaf-cli image (mutable pointer) | `ghcr.io/u2giants/seafile:seaf-cli-latest` |
 | seaf-cli image (immutable, per build) | `ghcr.io/u2giants/seafile:sha-<commit-sha>` |
-| nas-settings image | `nas-settings:local` (built on the VPS, not published) |
-| CI workflow | `.github/workflows/seaf-cli-image.yml` ("seaf-cli image") |
+| nas-settings image (mutable pointer) | `ghcr.io/u2giants/seafile:nas-settings-latest` |
+| nas-settings image (immutable, per build) | `ghcr.io/u2giants/seafile:nas-settings-sha-<commit-sha>` |
+| CI workflows | `.github/workflows/seaf-cli-image.yml` ("seaf-cli image"), `nas-settings-image.yml` ("nas-settings image") |
 | Linode Object Storage region | `br-gru-1` (São Paulo) |
 | S3 blocks bucket | `seafile-s3` |
 | S3 commits bucket | `seafile-s3-commits` |
@@ -427,22 +429,22 @@ GitHub Actions stores **no** deploy or SSH secrets — CI only needs the built-i
 
 ## Deployment
 
-This is primarily a **config-only repo**. The single build artifact is the seaf-cli wrapper image (`ghcr.io/u2giants/seafile:seaf-cli-latest` + `:sha-<commit>`); everything else (VPS Seafile, MariaDB, Redis, Caddy) runs upstream images with no build step.
+This is primarily a **config-only repo**. Two build artifacts are CI-built and published to GHCR: the seaf-cli wrapper image (`:seaf-cli-latest` + `:sha-<commit>`) and the nas-settings panel image (`:nas-settings-latest` + `:nas-settings-sha-<commit>`); everything else (VPS Seafile, MariaDB, Redis, Caddy) runs upstream images with no build step.
 
 ### CI/CD model — documented §25 exception to the Coolify default
 
-The org-wide CI/CD rules assume a deployment platform (Coolify) that GitHub Actions triggers by API/webhook, which then pulls and runs the image. **This repo has no deployment platform**, so that path does not apply. Per §25, the exception is recorded here:
+The org-wide CI/CD rules assume a deployment platform (Coolify) that GitHub Actions triggers by API/webhook, which then pulls and runs the image. **This repo has no deployment platform**, so that path does not apply. Per §25, the exception is recorded here. It covers **both** CI-built images — the seaf-cli wrapper and the nas-settings panel.
 
-- **Why the default doesn't fit:** The runtime hosts are a Linode VPS (Seafile server, managed by direct Docker Compose) and a Synology NAS / Windows workstation (the seaf-cli containers). None is fronted by Coolify or any deploy platform; a Synology NAS in particular cannot run one. There is no platform API to trigger.
-- **Replacement release path:** Edit files in repo → commit to `main` → GitHub Actions (`seaf-cli image`) lints (`pyflakes`, gate via `needs: lint`), builds, and publishes the image to GHCR. Deployment is then a manual, repo-driven pull of that **already-published** image on the target host (no rebuild on the host). The host runs only what the repo (compose) + registry (image) define.
-- **Verification enforcement:** The `build-push` job depends on `lint` with native `needs`; a lint failure blocks publish. There is no second workflow and no SHA-polling gate.
-- **Artifact deployed:** Exactly the image built by the approved workflow, identified by the immutable `sha-<commit>` tag. `seaf-cli-latest` is the convenience pointer for normal deploys.
-- **Rollback:** Re-point a NAS/Windows container at a prior `ghcr.io/u2giants/seafile:sha-<older-commit>` tag and `up -d` — no manual file edits or local image builds.
-- **Where runtime config lives:** In repo-managed `docker-compose.yml` (image, volumes, env var *names*, resource limits) plus host-side secret *values* in `/tmp/.env` (NAS) and `/opt/seafile/.env` (VPS). There is no deploy platform to own runtime config, so the repo compose is authoritative and host env files hold only secret values.
-- **Audit trail:** GitHub Actions run history + GHCR `sha-` tags + git commit history. Every deployed container traces to a commit via its `sha-` tag.
-- **Avoiding hidden server state:** No CI step SSHes into or mutates production. The NAS pull/recreate is a manual operation that runs the published image against the repo's compose — it does not define new production behavior on the host. The Prime Directive (no server-only changes) keeps the repo authoritative.
+- **Why the default doesn't fit:** The runtime hosts are a Linode VPS (the Seafile server **and** the nas-settings panel, managed by direct Docker Compose) and a Synology NAS / Windows workstation (the seaf-cli containers). None is fronted by Coolify or any deploy platform; a Synology NAS in particular cannot run one. There is no platform API to trigger.
+- **Replacement release path:** Edit files in repo → commit to `main` → GitHub Actions (`seaf-cli image` / `nas-settings image`) runs lint + tests (gated via native `needs`), builds, and publishes the image to GHCR. Deployment is then a manual, repo-driven **pull** of that already-published image on the target host (no rebuild on the host). The host runs only what the repo (compose) + registry (image) define.
+- **Verification enforcement:** In each workflow the `build-push` job depends on the `lint`/`test` job with native `needs`; a verification failure blocks publish. There is no second workflow and no SHA-polling gate. Neither image is ever built on the production host as the normal path.
+- **Artifact deployed:** Exactly the image built by the approved workflow, identified by its immutable `sha-`/`nas-settings-sha-` tag. The `…-latest` tags are convenience pointers for normal deploys.
+- **Rollback:** Re-point a container's `image:` at a prior immutable tag (`:sha-<older-commit>` for seaf-cli, `:nas-settings-sha-<older-commit>` for the panel) and `up -d` — no manual file edits or local image builds.
+- **Where runtime config lives:** In repo-managed Compose (`docker-compose.yml`, `nas-settings.yml` — image, volumes, env var *names*, resource limits, Caddy labels) plus host-side secret *values* in `/tmp/.env` (NAS) and `/opt/seafile/.env` (VPS). There is no deploy platform to own runtime config, so the repo compose is authoritative and host env files hold only secret values.
+- **Audit trail:** GitHub Actions run history + GHCR image tags + git commit history. Every deployed container traces to a commit via its immutable tag.
+- **Avoiding hidden server state:** No CI step SSHes into or mutates production. The host pull/recreate is a manual operation that runs the published image against the repo's compose — it does not define new production behavior on the host. The Prime Directive (no server-only changes) keeps the repo authoritative.
 
-**Not a normal deploy path:** GitHub Actions must never SSH into the VPS/NAS or run Docker there (§3/§10). CI's job ends at publishing to GHCR.
+**Not a normal deploy path:** GitHub Actions must never SSH into the VPS/NAS or run Docker there (§3/§10). CI's job ends at publishing to GHCR. Building the nas-settings image locally on the VPS (`docker compose build`) is **not** the approved path — pull the CI-published image instead.
 
 ### How changes get deployed
 
