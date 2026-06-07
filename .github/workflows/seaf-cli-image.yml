@@ -7,6 +7,9 @@ on:
       - synology-seaf-cli/Dockerfile
       - synology-seaf-cli/entrypoint.py
       - synology-seaf-cli/seaf-entrypoint.py
+      # Verification input: a test-only change should still run CI (the lint job
+      # runs test_entrypoint.py). Rebuilds an identical runtime image — harmless.
+      - synology-seaf-cli/test_entrypoint.py
   workflow_dispatch:
 
 # §27: don't let an obsolete build hold up a newer commit on the same ref.
