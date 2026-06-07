@@ -16,22 +16,29 @@
       color: #111827;
     }
 
-    header {
-      background: #1a2a4a;
-      color: #fff;
-      padding: 18px 32px;
+    /* Seafile-style top bar so the panel reads as part of Seafile */
+    .sf-topbar {
+      background: #fff;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 10px 24px;
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      gap: 16px;
     }
-    header .title { font-size: 1.05rem; font-weight: 600; letter-spacing: 0.01em; }
-    header a.logout {
-      color: rgba(255,255,255,0.7);
-      text-decoration: none;
-      font-size: 0.85rem;
-      transition: color 0.15s;
+    .sf-brand { display: flex; align-items: center; }
+    .sf-brand img { height: 30px; display: block; }
+    .sf-section {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #1a2a4a;
+      padding-left: 16px;
+      border-left: 1px solid #e5e7eb;
     }
-    header a.logout:hover { color: #fff; }
+    .sf-spacer { margin-left: auto; }
+    .sf-back { color: #1d4ed8; text-decoration: none; font-size: 0.9rem; font-weight: 600; }
+    .sf-back:hover { text-decoration: underline; }
+    .sf-logout { color: #6b7280; text-decoration: none; font-size: 0.85rem; }
+    .sf-logout:hover { color: #1a2a4a; }
 
     main {
       flex: 1;
@@ -212,9 +219,14 @@
   {% block extra_css %}{% endblock %}
 </head>
 <body>
-  <header>
-    <span class="title">NAS Sync Control &mdash; POP Creations</span>
-    <a href="/accounts/logout/" class="logout">Sign out</a>
+  <header class="sf-topbar">
+    <a class="sf-brand" href="/" title="Back to Seafile">
+      <img src="/media/img/seafile-logo.png" alt="Seafile" />
+    </a>
+    <span class="sf-section">NAS Sync</span>
+    <div class="sf-spacer"></div>
+    <a href="/" class="sf-back">&larr; Back to Seafile</a>
+    <a href="/accounts/logout/" class="sf-logout">Sign out</a>
   </header>
 
   <main>
