@@ -21,6 +21,16 @@ import seafile
 DAEMON_START_TIMEOUT = 60  # seconds to wait for socket after seaf-cli start
 INIT_TIMEOUT = 30          # seconds to wait for .ini after seaf-cli init
 
+# Well-known seaf-daemon config keys reported in the status snapshot so the
+# nas-settings Config page can show current values. Any key can still be
+# get/set on demand via a config_get / config_set command.
+KNOWN_CONFIG_KEYS = [
+    "upload_limit",
+    "download_limit",
+    "disable_verify_certificate",
+    "sync_extra_temp_file",
+]
+
 
 class BadConfiguration(Exception):
     pass
@@ -307,6 +317,28 @@ class Client:
             except Exception:
                 pass
 
+        # Local libraries (seaf-cli list) — name/id/worktree, the worktree being
+        # the path the Libraries page passes back for a desync.
+        local_repos = []
+        if hasattr(self, "rpc"):
+            try:
+                for repo in self.rpc.get_repo_list(-1, -1):
+                    local_repos.append({
+                        "name": repo.name,
+                        "id": repo.id,
+                        "worktree": getattr(repo, "worktree", None),
+                    })
+            except Exception:
+                pass
+
+        # Daemon config snapshot (seaf-cli config -k). Cached and refreshed only
+        # on config_set, so the 30 s status loop stays cheap.
+        if getattr(self, "_config_cache", None) is None:
+            try:
+                self._refresh_config_cache()
+            except Exception:
+                self._config_cache = {}
+
         return {
             "container_id": os.environ.get("HOSTNAME", "unknown"),
             "library_uuid": os.environ.get("SEAF_LIBRARY", ""),
@@ -315,19 +347,148 @@ class Client:
             "daemon_alive": daemon_alive,
             "paused": paused,
             "repos": repos,
+            "local_repos": local_repos,
+            "config": self._config_cache or {},
+            "confdir": str(self.ini.parent),
+            "initialized": self.ini.exists(),
             "staging_files": ingest.get("files"),
             "last_ingest_at": ingest.get("last_ingest_at"),
             "ingest_days": ingest.get("ingest_days"),
         }
 
+    def _run_seaf(self, args: list[str], timeout: int = 120) -> tuple[bool, str]:
+        """Run a seaf-cli subcommand; return (ok, combined output) with any
+        credentials redacted so they never reach the server's result log."""
+        try:
+            proc = subprocess.run(
+                self.binary + args, capture_output=True, text=True, timeout=timeout
+            )
+        except subprocess.TimeoutExpired:
+            return False, "command timed out"
+        except Exception as exc:
+            return False, str(exc)
+        out = ((proc.stdout or "") + (proc.stderr or "")).strip()
+        for secret in {s for s in (self.password, self.token) if s}:
+            out = out.replace(secret, "***")
+        return proc.returncode == 0, out
+
+    def _refresh_config_cache(self) -> None:
+        """Populate self._config_cache with current values of the known keys."""
+        cache: dict = {}
+        for key in KNOWN_CONFIG_KEYS:
+            ok, out = self._run_seaf(["config", "-k", key], timeout=10)
+            cache[key] = out if (ok and out) else None
+        self._config_cache = cache
+
+    def _dispatch_command(self, command: dict) -> dict:
+        """Execute one queued seaf-cli command and return a result record.
+
+        Never raises — the status reporter must keep running no matter what.
+        """
+        verb = command.get("verb", "")
+        args = command.get("args") or {}
+        result = {"id": command.get("id"), "verb": verb,
+                  "ok": False, "output": "", "error": "",
+                  "finished_at": datetime.datetime.utcnow().isoformat() + "Z"}
+        try:
+            if verb in ("pause", "resume"):
+                if not hasattr(self, "rpc"):
+                    raise RuntimeError("daemon not running")
+                if verb == "pause":
+                    self.rpc.disable_auto_sync()
+                    result.update(ok=True, output="auto-sync disabled")
+                else:
+                    self.rpc.enable_auto_sync()
+                    result.update(ok=True, output="auto-sync enabled")
+
+            elif verb in ("restart", "stop"):
+                # Stop the daemon. watch() then exits and the container's
+                # restart policy relaunches it (a lasting stop = stop the
+                # container itself; see the panel's guidance).
+                self._run_seaf(["stop"], timeout=30)
+                result.update(ok=True,
+                              output="daemon stopped; container will relaunch it")
+
+            elif verb == "reinit":
+                # Force a fresh client init on next start: drop the .ini/socket/pid
+                # (synced data volume is untouched) then stop so the container
+                # restarts and re-initializes. Libraries are re-cloned.
+                for stale in (self.ini, self.socket,
+                              self.seafile / "seafile-data" / "seafile.pid"):
+                    try:
+                        stale.unlink()
+                    except OSError:
+                        pass
+                self._run_seaf(["stop"], timeout=30)
+                result.update(ok=True,
+                              output="re-initializing; libraries will be re-cloned")
+
+            elif verb == "config_get":
+                key = args.get("key", "")
+                if not key:
+                    raise ValueError("missing config key")
+                ok, out = self._run_seaf(["config", "-k", key], timeout=10)
+                result.update(ok=ok, output=out)
+
+            elif verb == "config_set":
+                key = args.get("key", "")
+                value = str(args.get("value", ""))
+                if not key:
+                    raise ValueError("missing config key")
+                ok, out = self._run_seaf(["config", "-k", key, "-v", value], timeout=10)
+                self._refresh_config_cache()
+                result.update(ok=ok, output=out or f"{key} = {value}")
+
+            elif verb == "list":
+                ok, out = self._run_seaf(["list"], timeout=30)
+                result.update(ok=ok, output=out)
+
+            elif verb == "list_remote":
+                ok, out = self._run_seaf(
+                    ["list-remote", *self._get_credential_args()], timeout=60)
+                result.update(ok=ok, output=out)
+
+            elif verb == "desync":
+                worktree = args.get("worktree", "")
+                if not worktree:
+                    raise ValueError("missing worktree path")
+                ok, out = self._run_seaf(["desync", "-d", worktree], timeout=30)
+                result.update(ok=ok, output=out or f"desynced {worktree}")
+
+            elif verb == "create":
+                name = args.get("name", "")
+                if not name:
+                    raise ValueError("missing library name")
+                desc = args.get("desc") or name
+                cmd = ["create", *self._get_credential_args(), "-n", name, "-t", desc]
+                if args.get("enc_password"):
+                    cmd += ["-e", args["enc_password"]]
+                ok, out = self._run_seaf(cmd, timeout=60)
+                result.update(ok=ok, output=out)
+
+            else:
+                result["error"] = f"unknown verb: {verb}"
+        except Exception as exc:
+            result["error"] = str(exc)
+
+        if not result["ok"] and not result["error"]:
+            result["error"] = result.get("output") or "command failed"
+        return result
+
     def _start_status_reporter(self, settings_url: str, token: str | None) -> None:
-        """Start a daemon thread that POSTs sync status to the server every 30 seconds."""
+        """Start a daemon thread that POSTs sync status every 30 s, carries back
+        any command results, and executes the next queued command."""
         status_url = settings_url.rstrip("/").rsplit("/api/settings", 1)[0] + "/api/status"
+        self._pending_results: list[dict] = []
+        self._config_cache = None
 
         def _loop() -> None:
             while True:
                 try:
-                    payload = json.dumps(self._collect_status()).encode()
+                    payload_obj = self._collect_status()
+                    if self._pending_results:
+                        payload_obj["command_results"] = self._pending_results
+                    payload = json.dumps(payload_obj).encode()
                     headers = {"Content-Type": "application/json"}
                     if token:
                         headers["X-Status-Token"] = token
@@ -336,13 +497,13 @@ class Client:
                     )
                     with urllib.request.urlopen(req, timeout=10) as resp:
                         body = json.loads(resp.read().decode())
-                        cmd = body.get("command")
-                        if cmd == "pause":
-                            subprocess.run(["seaf-cli", "pause"], timeout=10, capture_output=True)
-                            logger.info("Paused sync on server command")
-                        elif cmd == "resume":
-                            subprocess.run(["seaf-cli", "resume"], timeout=10, capture_output=True)
-                            logger.info("Resumed sync on server command")
+                    # Results were delivered with this POST — clear them.
+                    self._pending_results = []
+                    command = body.get("command")
+                    if command:
+                        logger.info("Executing queued command: %s",
+                                    command.get("verb"))
+                        self._pending_results.append(self._dispatch_command(command))
                 except Exception:
                     pass  # best-effort; never crash the container
                 time.sleep(30)

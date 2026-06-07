@@ -1,3 +1,5 @@
 .env
 CREDENTIALS.txt
 *.sql
+__pycache__/
+*.pyc

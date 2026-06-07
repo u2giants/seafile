@@ -1,8 +1,58 @@
 # nas-settings
 
-Flask web app that lets Seafile admins configure the NAS ingest window (how many days back each library syncs) without editing files or restarting containers.
+Flask web app that gives the Seafile server's web UI a **GUI for the seaf-cli client**
+running on the NAS — everything seaf-cli can do via the command line, surfaced as
+admin controls. It also keeps the original ingest-window settings.
 
-Accessible at `https://seafile.designflow.app/nas-settings/` via a link in the Seafile System Admin sidebar.
+Accessible at `https://seafile.designflow.app/nas-settings/` via a link in the Seafile
+System Admin sidebar.
+
+## Pages (tabs)
+
+| Tab | seaf-cli equivalent | What it does |
+|-----|---------------------|--------------|
+| **Dashboard** | `status` | Live per-library sync state, progress, errors, staging/ingest info; pause/resume. |
+| **Controls** | `start` / `stop` / auto-sync | Pause, resume, restart daemon, stop daemon. |
+| **Config** | `config -k [-v]` | Get/set any daemon config key (upload/download limits, TLS verify, …) plus a free-form key/value. |
+| **Libraries** | `list`, `list-remote`, `create`, `desync` | Local libraries + desync; list server libraries; create a server library. |
+| **Ingest Window** | — | The original per-library ingest-day window. |
+
+### Safety tiers
+- **Read / Safe** (status, list, config get/set, pause/resume/restart/stop) apply directly.
+- **Guarded** (`desync`, `create`, re-`init`) require typing the library name to confirm; the
+  server also rejects them unless the request carries `confirm: true`.
+- **Guidance-only**: `download` / `sync` of a *brand-new* NAS folder can't be done to a
+  running container (the source is a baked-in read-only bind-mount), so the Libraries page
+  shows the exact compose edit + redeploy steps instead of a button.
+
+## How control works (the bridge)
+
+The server cannot reach the NAS directly, so it never pushes. Instead the seaf-cli
+container's `entrypoint.py` **polls** every 30 s:
+
+1. Container POSTs `/api/status` (authenticated by `SEAF_STATUS_TOKEN`) with its current
+   state and the results of any command it just ran.
+2. The server persists the status and **hands back the next queued command** in the
+   response: `{command: {id, verb, args}}`.
+3. The container runs it (via the daemon RPC for pause/resume, otherwise `seaf-cli`) and
+   reports the result on its next POST.
+
+Everything is keyed by **library UUID** (`SEAF_LIBRARY`) — stable and known to both sides —
+not the container's ephemeral Docker hostname. Admin actions in the browser call
+`POST /api/command {library_uuid, verb, args, confirm}`, which enqueues the command.
+
+## Tests
+
+`test_app.py` drives the Flask test client through template rendering, the command-queue
+tiers/confirm gating, UUID routing, and result persistence — no live Seafile/NAS needed:
+
+```bash
+cd seafile-server/nas-settings
+pip install flask && python test_app.py
+```
+
+Run in CI by `.github/workflows/nas-settings-test.yml`. The NAS-side dispatcher has its own
+stubbed test at `synology-seaf-cli/test_entrypoint.py`.
 
 ## Auth
 
@@ -23,9 +73,25 @@ The `seafile` service name resolves because both containers are on `seafile-net`
 
 The NAS seaf-cli containers poll this endpoint hourly to pick up ingest window changes without a restart. `ingest_days: null` means "all files, no limit".
 
+## API endpoints
+
+| Endpoint | Auth | Purpose |
+|----------|------|---------|
+| `GET /api/settings` | none | Containers poll this for per-library `ingest_days` (see below). |
+| `POST /api/status` | `X-Status-Token` | Containers report state + command results; response carries the next queued command. |
+| `GET /api/status-data` | admin session | Browser polls this: per-library status, staleness, pending commands, recent results. |
+| `POST /api/command` | admin session | Enqueue a command `{library_uuid, verb, args, confirm}`. |
+
 ## State
 
-Settings are persisted to `/data/settings.json` inside the `nas-settings-data` Docker volume.
+Persisted under `/data/` inside the `nas-settings-data` Docker volume:
+
+| File | Contents |
+|------|----------|
+| `settings.json` | Per-library ingest window. |
+| `status.json` | Latest status report per library UUID. |
+| `commands.json` | FIFO queue of pending commands per library UUID. |
+| `results.json` | Most recent command results per library UUID (capped at 25). |
 
 ## Build and deploy
 
@@ -46,5 +112,6 @@ docker compose -f seafile-server.yml -f caddy.yml \
 | Variable | Source | Purpose |
 |----------|--------|---------|
 | `SECRET_KEY` | `.env` → `NAS_SETTINGS_SECRET_KEY` | Flask session signing |
+| `STATUS_TOKEN` | `.env` → `NAS_STATUS_TOKEN` (shared with each seaf-cli container's `SEAF_STATUS_TOKEN`) | Authenticates container status POSTs and gates command handback |
 | `SEAFILE_INTERNAL_URL` | hardcoded in `nas-settings.yml` | Base URL for internal Seafile API calls |
 | `SEAFILE_PUBLIC_HOST` | hardcoded in `nas-settings.yml` | Host header sent with internal API calls |

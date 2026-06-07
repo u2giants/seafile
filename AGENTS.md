@@ -6,7 +6,7 @@ POP Creations runs a 28TB design file library on two Synology NAS devices in a N
 
 1. **Seafile Pro** (image `seafileltd/seafile-pro-mc:13.0-latest`, a rolling tag that auto-tracks the newest 13.0.x patch) running on a Linode VPS (`seafile.designflow.app`) — the relay server. NAS pushes files here via seaf-cli; designers pull via HTTPS/desktop app.
 2. **seaf-cli Docker containers** on the Synology NAS — continuously sync NAS folders to specific Seafile libraries. Built from a wrapper image in `synology-seaf-cli/` (the one thing this repo builds and publishes to GHCR).
-3. **nas-settings** — a small Flask panel on the VPS (`/nas-settings/`) that lets an admin change each library's ingest window without restarting containers; the seaf-cli containers poll it hourly.
+3. **nas-settings** — a Flask panel on the VPS (`/nas-settings/`) that gives the Seafile web UI a GUI for the seaf-cli client on the NAS: live status, sync controls (pause/resume/restart/stop), daemon config, and library management (list/list-remote/create/desync), plus the ingest window. The server can't reach the NAS, so it queues commands by library UUID and the containers pick them up on their 30 s status poll.
 4. File data is stored in **Linode Object Storage (São Paulo, br-gru-1)**, not on the VPS disk. The VPS only holds metadata (MariaDB), session cache (Redis), and config.
 
 This is mostly an **infrastructure configuration repo**. The only build artifact is the seaf-cli wrapper image (`.github/workflows/seaf-cli-image.yml` → GHCR); `nas-settings` is built locally on the VPS. Everything else runs upstream images via Docker Compose — the deployment artifacts are the compose files and scripts themselves.
@@ -46,7 +46,7 @@ seafile-repo/                    Root — GitHub: github.com/u2giants/seafile
 │   ├── START_SEAFILE.sh         Pre-flight checks + start command
 │   ├── CONFIGURE_OAUTH.sh       One-time OAuth setup (already run — DO NOT RUN AGAIN)
 │   ├── CREATE_NAS_SYNC_ACCOUNT.sh  One-time machine account creation (already run — DO NOT RUN AGAIN)
-│   ├── nas-settings/            Flask app (app.py + templates) — ingest-window UI + status API
+│   ├── nas-settings/            Flask app (app.py + templates) — seaf-cli control panel + status/command API (test_app.py)
 │   │   └── Dockerfile           Built locally on the VPS as nas-settings:local (not in CI)
 │   ├── custom-templates/        Seahub template override — injects the nas-settings link into the sysadmin sidebar
 │   └── docs/                    seafile-server component docs (see "Documentation map" below)
@@ -57,7 +57,7 @@ seafile-repo/                    Root — GitHub: github.com/u2giants/seafile
 │
 ├── synology-seaf-cli/           NAS sync containers — wrapper image source
 │   ├── Dockerfile               Wrapper image — FROM flrnnc/seafile-client:latest, adds tini + fixed entrypoints
-│   ├── entrypoint.py            Fixed Seafile daemon entrypoint (replaces image default) + healthcheck + status reporter
+│   ├── entrypoint.py            Fixed Seafile daemon entrypoint (replaces image default) + healthcheck + status reporter & command dispatcher (test_entrypoint.py)
 │   ├── seaf-entrypoint.py       Hardlink/scandir date-filter staging wrapper; launches entrypoint.py
 │   ├── docker-compose.yml       One service per Seafile library
 │   ├── .env.example             NAS sync password template
@@ -209,7 +209,7 @@ These containers are defined by the upstream Seafile Docker Compose. Their names
 | `seafile-mysql` | MariaDB 10.11 — metadata database | `seafile-server/seafile-server.yml` |
 | `seafile-redis` | Redis — session cache | `seafile-server/seafile-server.yml` |
 | `seafile-caddy` | Caddy reverse proxy — TLS termination | `seafile-server/caddy.yml` |
-| `nas-settings` | Flask ingest-window panel + status API, image `nas-settings:local` (built on the VPS) | `seafile-server/nas-settings.yml` |
+| `nas-settings` | Flask seaf-cli control panel + status/command API, image `nas-settings:local` (built on the VPS) | `seafile-server/nas-settings.yml` |
 
 ### NAS Containers (edgesynology1 — 192.168.3.100)
 

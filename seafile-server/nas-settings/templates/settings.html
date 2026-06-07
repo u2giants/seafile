@@ -219,8 +219,11 @@
 
   <main>
     <nav class="page-nav">
-      <a href="{{ url_for('index') }}" class="nav-tab active">Settings</a>
-      <a href="{{ url_for('status_page') }}" class="nav-tab">Sync Status</a>
+      <a href="{{ url_for('status_page') }}"    class="nav-tab {% if active_tab == 'dashboard' %}active{% endif %}">Dashboard</a>
+      <a href="{{ url_for('controls_page') }}"  class="nav-tab {% if active_tab == 'controls' %}active{% endif %}">Controls</a>
+      <a href="{{ url_for('config_page') }}"    class="nav-tab {% if active_tab == 'config' %}active{% endif %}">Config</a>
+      <a href="{{ url_for('libraries_page') }}" class="nav-tab {% if active_tab == 'libraries' %}active{% endif %}">Libraries</a>
+      <a href="{{ url_for('index') }}"          class="nav-tab {% if active_tab == 'settings' %}active{% endif %}">Ingest Window</a>
     </nav>
 
     <h1 class="page-heading">Ingest Window Settings</h1>

@@ -214,8 +214,11 @@
 
   <main>
     <nav class="page-nav">
-      <a href="{{ url_for('index') }}" class="nav-tab">Settings</a>
-      <a href="{{ url_for('status_page') }}" class="nav-tab active">Sync Status</a>
+      <a href="{{ url_for('status_page') }}"    class="nav-tab {% if active_tab == 'dashboard' %}active{% endif %}">Dashboard</a>
+      <a href="{{ url_for('controls_page') }}"  class="nav-tab {% if active_tab == 'controls' %}active{% endif %}">Controls</a>
+      <a href="{{ url_for('config_page') }}"    class="nav-tab {% if active_tab == 'config' %}active{% endif %}">Config</a>
+      <a href="{{ url_for('libraries_page') }}" class="nav-tab {% if active_tab == 'libraries' %}active{% endif %}">Libraries</a>
+      <a href="{{ url_for('index') }}"          class="nav-tab {% if active_tab == 'settings' %}active{% endif %}">Ingest Window</a>
     </nav>
 
     <h1 class="page-heading">Sync Status</h1>
@@ -295,13 +298,13 @@
       return state;
     }
 
-    async function sendCommand(containerId, command, btn) {
+    async function sendCommand(libraryUuid, verb, btn) {
       btn.disabled = true;
       try {
         const resp = await fetch("{{ url_for('api_command') }}", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({container_id: containerId, command}),
+          body: JSON.stringify({library_uuid: libraryUuid, verb}),
         });
         if (!resp.ok) throw new Error("server error");
       } catch (e) {
@@ -330,9 +333,9 @@
       const ctrlEl = document.getElementById("ctrl-" + lib.id);
       if (!stale && data.daemon_alive) {
         if (data.paused) {
-          ctrlEl.innerHTML = `<button class="btn-resume" onclick="sendCommand('${lib.id}','resume',this)">Resume</button>`;
+          ctrlEl.innerHTML = `<button class="btn-resume" onclick="sendCommand('${lib.uuid}','resume',this)">Resume</button>`;
         } else {
-          ctrlEl.innerHTML = `<button class="btn-pause" onclick="sendCommand('${lib.id}','pause',this)">Pause</button>`;
+          ctrlEl.innerHTML = `<button class="btn-pause" onclick="sendCommand('${lib.uuid}','pause',this)">Pause</button>`;
         }
       } else {
         ctrlEl.innerHTML = "";

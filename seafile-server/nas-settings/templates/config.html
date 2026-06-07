@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Daemon Config — POP Creations{% endblock %}
+
+{% block content %}
+  <h1 class="page-heading">Daemon Config</h1>
+  <p class="page-sub">
+    Get and set any <code>seaf-cli config</code> key per library (speed limits, TLS
+    verification, and more). Changes apply within ~30&nbsp;seconds. Well-known keys
+    are listed; use the free-form row for any other key.
+  </p>
+
+  <div id="cards">
+    {% for lib in libraries %}
+    <div class="card" id="card-{{ lib.uuid }}">
+      <div class="card-header">
+        <h2>{{ lib.name }}</h2>
+        <span class="uuid">{{ lib.uuid }}</span>
+      </div>
+      <div id="state-{{ lib.uuid }}"><div class="offline-note">Loading…</div></div>
+
+      <table class="data" style="margin-top:8px;">
+        <thead><tr><th>Setting</th><th>Current</th><th>New value</th><th></th></tr></thead>
+        <tbody id="config-body-{{ lib.uuid }}"></tbody>
+        <tbody>
+          <tr>
+            <td>
+              <input type="text" id="freekey-{{ lib.uuid }}" placeholder="custom key" style="width:150px;" />
+            </td>
+            <td class="hint">free-form</td>
+            <td><input type="text" id="freeval-{{ lib.uuid }}" placeholder="value" style="width:130px;" /></td>
+            <td><button class="btn btn-primary" onclick="setFree('{{ lib.uuid }}')">Set</button></td>
+          </tr>
+        </tbody>
+      </table>
+      <div id="feedback-{{ lib.uuid }}"></div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <p class="refresh-note" id="refresh-note">Refreshing…</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const LIBRARIES = {{ libraries | tojson }};
+  const CONFIG_KEYS = {{ config_keys | tojson }};
+
+  function fieldFor(uuid, k, current) {
+    const id = "val-" + uuid + "-" + k.key;
+    if (k.type === "bool") {
+      const cur = (current === "true" || current === true) ? "true" : "false";
+      return '<select id="' + id + '">' +
+        '<option value="false"' + (cur === "false" ? " selected" : "") + '>false</option>' +
+        '<option value="true"'  + (cur === "true"  ? " selected" : "") + '>true</option></select>';
+    }
+    if (k.type === "int") {
+      return '<input type="number" id="' + id + '" min="0" value="' + (current ?? "") + '" style="width:120px;" />';
+    }
+    return '<input type="text" id="' + id + '" value="' + (current ?? "") + '" style="width:130px;" />';
+  }
+
+  async function setKey(uuid, key, value, btn) {
+    const fb = document.getElementById("feedback-" + uuid);
+    if (btn) btn.disabled = true;
+    try {
+      await queueCommand(uuid, "config_set", {key, value}, false);
+      fb.innerHTML = '<div class="pending-note">Set ' + key + ' = ' + value + ' — queued, applies within ~30s.</div>';
+    } catch (e) {
+      fb.innerHTML = '<div class="result fail">Failed: ' + e.message + '</div>';
+    } finally {
+      if (btn) btn.disabled = false;
+      setTimeout(refresh, 1500);
+    }
+  }
+
+  function setFree(uuid) {
+    const key = document.getElementById("freekey-" + uuid).value.trim();
+    const value = document.getElementById("freeval-" + uuid).value;
+    if (!key) { alert("Enter a config key."); return; }
+    setKey(uuid, key, value, null);
+  }
+
+  function render(lib, entry) {
+    const stateEl = document.getElementById("state-" + lib.uuid);
+    const bodyEl  = document.getElementById("config-body-" + lib.uuid);
+    const fbEl    = document.getElementById("feedback-" + lib.uuid);
+    const cfg = (entry && entry.config) || {};
+    const offline = !entry || entry.stale;
+
+    stateEl.innerHTML = offline
+      ? '<div class="offline-note">Container offline — values shown may be stale; new settings queue until it reports.</div>'
+      : '<span class="hint">Last seen ' + ago(entry.seconds_ago) + '</span>';
+
+    let rows = "";
+    CONFIG_KEYS.forEach(k => {
+      const current = cfg[k.key];
+      rows += '<tr>' +
+        '<td><div>' + k.label + '</div><div class="hint">' + k.help + '</div></td>' +
+        '<td class="mono">' + (current ?? "—") + '</td>' +
+        '<td>' + fieldFor(lib.uuid, k, current) + '</td>' +
+        '<td><button class="btn btn-primary" onclick="setKey(\'' + lib.uuid + '\',\'' + k.key +
+          '\',document.getElementById(\'val-' + lib.uuid + '-' + k.key + '\').value,this)">Set</button></td>' +
+        '</tr>';
+    });
+    bodyEl.innerHTML = rows;
+
+    const res = (entry && entry.recent_results || []).find(r => r.verb === "config_set" || r.verb === "config_get");
+    const pending = (entry && entry.pending_commands || []).filter(c => c.verb === "config_set");
+    if (pending.length) {
+      fbEl.innerHTML = '<div class="pending-note">' + pending.length + ' config change(s) queued…</div>';
+    } else if (res) {
+      fbEl.innerHTML = '<div class="result ' + (res.ok ? "ok" : "fail") + '">' +
+        (res.ok ? "✓ " : "✗ ") + (res.output || res.error || "") + '</div>';
+    } else {
+      fbEl.innerHTML = "";
+    }
+  }
+
+  async function refresh() {
+    try {
+      const resp = await fetch(STATUS_URL);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      LIBRARIES.forEach(lib => render(lib, data[lib.uuid] || null));
+      document.getElementById("refresh-note").textContent = "Last refreshed: " + new Date().toLocaleTimeString();
+    } catch (e) {
+      document.getElementById("refresh-note").textContent = "Refresh failed — retrying…";
+    }
+  }
+  refresh();
+  setInterval(refresh, 10000);
+</script>
+{% endblock %}

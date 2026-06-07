@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}NAS Sync Control — POP Creations{% endblock %}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f0f2f5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      color: #111827;
+    }
+
+    header {
+      background: #1a2a4a;
+      color: #fff;
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header .title { font-size: 1.05rem; font-weight: 600; letter-spacing: 0.01em; }
+    header a.logout {
+      color: rgba(255,255,255,0.7);
+      text-decoration: none;
+      font-size: 0.85rem;
+      transition: color 0.15s;
+    }
+    header a.logout:hover { color: #fff; }
+
+    main {
+      flex: 1;
+      max-width: 760px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 36px 16px 48px;
+    }
+
+    .page-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 28px;
+      border-bottom: 2px solid #e5e7eb;
+    }
+    .nav-tab {
+      padding: 8px 16px 10px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #6b7280;
+      text-decoration: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      border-radius: 4px 4px 0 0;
+      transition: color 0.15s;
+    }
+    .nav-tab:hover { color: #1a2a4a; }
+    .nav-tab.active { color: #1a2a4a; border-bottom-color: #1a2a4a; }
+
+    .page-heading { font-size: 1.4rem; font-weight: 700; color: #1a2a4a; margin-bottom: 6px; }
+    .page-sub { color: #6b7280; font-size: 0.9rem; margin-bottom: 28px; line-height: 1.5; }
+
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      padding: 24px 28px;
+      margin-bottom: 20px;
+    }
+    .card-header { margin-bottom: 16px; }
+    .card-header h2 { font-size: 1.05rem; font-weight: 700; color: #111827; margin-bottom: 3px; }
+    .card-header .uuid {
+      font-family: "SF Mono", "Fira Code", "Courier New", monospace;
+      font-size: 0.75rem; color: #9ca3af;
+    }
+
+    /* Buttons */
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .btn:disabled { opacity: 0.5; cursor: default; }
+    .btn-default { background: #f3f4f6; color: #374151; }
+    .btn-default:hover { background: #e5e7eb; }
+    .btn-primary { background: #2e7d32; color: #fff; }
+    .btn-primary:hover { background: #1b5e20; }
+    .btn-blue { background: #eff6ff; color: #1d4ed8; }
+    .btn-blue:hover { background: #dbeafe; }
+    .btn-danger { background: #fef2f2; color: #b91c1c; }
+    .btn-danger:hover { background: #fee2e2; }
+
+    .btn-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+    /* Forms */
+    label.field-label { font-size: 0.85rem; font-weight: 600; color: #374151; display: block; margin-bottom: 6px; }
+    input[type="text"], input[type="number"], input[type="password"], select {
+      padding: 9px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      color: #111827;
+      background: #fff;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus, select:focus {
+      border-color: #1a2a4a;
+      box-shadow: 0 0 0 3px rgba(26,42,74,0.10);
+    }
+    .hint { font-size: 0.8rem; color: #9ca3af; margin-top: 6px; line-height: 1.4; }
+
+    /* Tables */
+    table.data { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    table.data th, table.data td {
+      text-align: left;
+      padding: 9px 10px;
+      border-bottom: 1px solid #eef0f3;
+      vertical-align: middle;
+    }
+    table.data th { color: #9ca3af; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    table.data td.mono { font-family: "SF Mono", "Fira Code", "Courier New", monospace; font-size: 0.8rem; }
+
+    /* Badges */
+    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
+    .badge.ok { background: #f0fdf4; color: #15803d; }
+    .badge.busy { background: #fffbeb; color: #b45309; }
+    .badge.error { background: #fef2f2; color: #b91c1c; }
+    .badge.idle { background: #f9fafb; color: #6b7280; }
+    .badge.paused { background: #eff6ff; color: #1d4ed8; }
+
+    /* Result / output box */
+    .result {
+      margin-top: 12px;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 0.85rem;
+      line-height: 1.5;
+      border: 1px solid transparent;
+    }
+    .result.ok { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+    .result.fail { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+    pre.output {
+      margin-top: 8px;
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-family: "SF Mono", "Fira Code", "Courier New", monospace;
+      font-size: 0.8rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 320px;
+      overflow: auto;
+    }
+
+    .pending-note {
+      font-size: 0.8rem;
+      color: #b45309;
+      margin-top: 10px;
+    }
+    .offline-note {
+      font-size: 0.85rem;
+      color: #9ca3af;
+      padding: 8px 0;
+    }
+    .guidance {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 16px 18px;
+      margin-top: 14px;
+    }
+    .guidance h3 { font-size: 0.95rem; color: #1a2a4a; margin-bottom: 8px; }
+    .guidance ol { margin: 0 0 0 18px; font-size: 0.85rem; color: #374151; line-height: 1.7; }
+    .guidance code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 0.82rem; }
+
+    .banner-success {
+      background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px;
+      color: #15803d; font-size: 0.9rem; padding: 14px 18px; margin-bottom: 24px; line-height: 1.5;
+    }
+    .refresh-note { font-size: 0.78rem; color: #9ca3af; text-align: right; margin-top: 8px; }
+
+    /* Confirm modal */
+    .modal-backdrop {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(15,23,42,0.45);
+      align-items: center; justify-content: center;
+      padding: 16px; z-index: 50;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: #fff; border-radius: 12px; max-width: 440px; width: 100%;
+      padding: 26px 26px 22px; box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+    }
+    .modal h3 { font-size: 1.1rem; color: #b91c1c; margin-bottom: 10px; }
+    .modal p { font-size: 0.9rem; color: #374151; line-height: 1.55; margin-bottom: 14px; }
+    .modal input { width: 100%; margin-bottom: 16px; }
+    .modal .btn-row { justify-content: flex-end; }
+  </style>
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+  <header>
+    <span class="title">NAS Sync Control &mdash; POP Creations</span>
+    <a href="/accounts/logout/" class="logout">Sign out</a>
+  </header>
+
+  <main>
+    <nav class="page-nav">
+      <a href="{{ url_for('status_page') }}"    class="nav-tab {% if active_tab == 'dashboard' %}active{% endif %}">Dashboard</a>
+      <a href="{{ url_for('controls_page') }}"  class="nav-tab {% if active_tab == 'controls' %}active{% endif %}">Controls</a>
+      <a href="{{ url_for('config_page') }}"    class="nav-tab {% if active_tab == 'config' %}active{% endif %}">Config</a>
+      <a href="{{ url_for('libraries_page') }}" class="nav-tab {% if active_tab == 'libraries' %}active{% endif %}">Libraries</a>
+      <a href="{{ url_for('index') }}"          class="nav-tab {% if active_tab == 'settings' %}active{% endif %}">Ingest Window</a>
+    </nav>
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Shared typed-confirmation modal for destructive actions -->
+  <div class="modal-backdrop" id="confirm-modal">
+    <div class="modal">
+      <h3 id="confirm-title">Confirm</h3>
+      <p id="confirm-body"></p>
+      <input type="text" id="confirm-input" autocomplete="off" placeholder="" />
+      <div class="btn-row">
+        <button class="btn btn-default" type="button" onclick="closeConfirm()">Cancel</button>
+        <button class="btn btn-danger" type="button" id="confirm-go" disabled>Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ---- Shared command + confirm helpers ----------------------------------
+    const COMMAND_URL = "{{ url_for('api_command') }}";
+    const STATUS_URL  = "{{ url_for('api_status_data') }}";
+
+    async function queueCommand(libraryUuid, verb, args, confirm) {
+      const resp = await fetch(COMMAND_URL, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({library_uuid: libraryUuid, verb, args: args || {}, confirm: !!confirm}),
+      });
+      if (!resp.ok) {
+        const e = await resp.json().catch(() => ({}));
+        throw new Error(e.error || "server error");
+      }
+      return resp.json();
+    }
+
+    // Typed-confirmation: the Confirm button stays disabled until the user
+    // types the required phrase (e.g. the library name) exactly.
+    let _confirmPhrase = "", _confirmCb = null;
+    function openConfirm(title, body, phrase, onConfirm) {
+      _confirmPhrase = phrase; _confirmCb = onConfirm;
+      document.getElementById("confirm-title").textContent = title;
+      document.getElementById("confirm-body").innerHTML = body;
+      const input = document.getElementById("confirm-input");
+      input.value = ""; input.placeholder = "Type: " + phrase;
+      document.getElementById("confirm-go").disabled = true;
+      document.getElementById("confirm-modal").classList.add("open");
+      input.focus();
+    }
+    function closeConfirm() {
+      document.getElementById("confirm-modal").classList.remove("open");
+      _confirmCb = null;
+    }
+    document.addEventListener("DOMContentLoaded", function () {
+      const input = document.getElementById("confirm-input");
+      input.addEventListener("input", function () {
+        document.getElementById("confirm-go").disabled = (input.value !== _confirmPhrase);
+      });
+      document.getElementById("confirm-go").addEventListener("click", function () {
+        if (input.value === _confirmPhrase && _confirmCb) { const cb = _confirmCb; closeConfirm(); cb(); }
+      });
+    });
+
+    function ago(seconds) {
+      if (seconds === null || seconds === undefined) return "unknown";
+      if (seconds < 5)  return "just now";
+      if (seconds < 60) return seconds + "s ago";
+      if (seconds < 3600) return Math.floor(seconds / 60) + "m ago";
+      return Math.floor(seconds / 3600) + "h ago";
+    }
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

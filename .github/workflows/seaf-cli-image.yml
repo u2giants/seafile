@@ -26,6 +26,8 @@ jobs:
       - run: |
           python -m pyflakes synology-seaf-cli/entrypoint.py
           python -m pyflakes synology-seaf-cli/seaf-entrypoint.py
+      # Verify the command dispatcher (seafile module + seaf-cli are stubbed).
+      - run: python synology-seaf-cli/test_entrypoint.py
 
   build-push:
     needs: lint

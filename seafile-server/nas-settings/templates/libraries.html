@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block title %}Libraries — POP Creations{% endblock %}
+
+{% block content %}
+  <h1 class="page-heading">Libraries</h1>
+  <p class="page-sub">
+    See what each NAS container is syncing, list libraries on the server, create a
+    new server library, or stop syncing one. Library-changing actions ask you to
+    type the name to confirm.
+  </p>
+
+  <!-- Per-library: local sync mappings -->
+  {% for lib in libraries %}
+  <div class="card" id="card-{{ lib.uuid }}">
+    <div class="card-header">
+      <h2>{{ lib.name }}</h2>
+      <span class="uuid">{{ lib.uuid }}</span>
+    </div>
+    <div id="state-{{ lib.uuid }}"><div class="offline-note">Loading…</div></div>
+    <table class="data" style="margin-top:8px;">
+      <thead><tr><th>Synced library</th><th>ID</th><th>Local folder</th><th></th></tr></thead>
+      <tbody id="local-body-{{ lib.uuid }}"></tbody>
+    </table>
+    <div id="feedback-{{ lib.uuid }}"></div>
+  </div>
+  {% endfor %}
+
+  <!-- Account-level: server libraries + create -->
+  <div class="card">
+    <div class="card-header"><h2>Server libraries</h2></div>
+    <p class="hint" style="margin-bottom:12px;">
+      Runs <code>seaf-cli list-remote</code> / <code>create</code> using the NAS sync
+      account, via whichever container is currently online.
+    </p>
+    <div class="btn-row">
+      <button class="btn btn-blue" id="list-remote-btn" onclick="listRemote(this)">List server libraries</button>
+    </div>
+    <div id="list-remote-out"></div>
+
+    <div style="margin-top:22px;">
+      <label class="field-label">Create a new server library</label>
+      <div class="btn-row" style="align-items:flex-start;">
+        <input type="text" id="create-name" placeholder="Library name" style="width:200px;" />
+        <input type="text" id="create-desc" placeholder="Description (optional)" style="width:200px;" />
+        <input type="password" id="create-enc" placeholder="Encryption password (optional)" style="width:230px;" />
+        <button class="btn btn-primary" onclick="createLib()">Create…</button>
+      </div>
+      <p class="hint">Creates an empty library on the server. To then sync a NAS folder into it, see the guidance below.</p>
+      <div id="create-out"></div>
+    </div>
+  </div>
+
+  <!-- Guidance: things a button cannot do to a running container -->
+  <div class="card">
+    <div class="card-header"><h2>Add a new NAS folder to sync</h2></div>
+    <p class="hint">
+      <code>seaf-cli download</code> / <code>sync</code> attach a <em>new</em> local folder to a
+      library. In this deployment each folder is a read-only bind-mount baked into the
+      container, so a new one can't be added to a running container from here — it needs a
+      config change + redeploy:
+    </p>
+    <div class="guidance">
+      <h3>Steps</h3>
+      <ol>
+        <li>(If needed) create the target library above, or note an existing library's UUID.</li>
+        <li>In <code>synology-seaf-cli/docker-compose.yml</code>, add a service block for the new
+          library: bind-mount the NAS folder at <code>/source:ro</code>, set
+          <code>SEAF_LIBRARY=&lt;uuid&gt;</code>, and add fresh
+          <code>-staging</code> / <code>-data</code> volumes.</li>
+        <li>Add the library to <code>LIBRARIES</code> in
+          <code>seafile-server/nas-settings/app.py</code> so it appears in this panel.</li>
+        <li>Commit, let CI publish the image, then redeploy the seaf-cli stack on the NAS
+          (see <code>synology-seaf-cli/README.md</code>).</li>
+      </ol>
+    </div>
+  </div>
+
+  <p class="refresh-note" id="refresh-note">Refreshing…</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const LIBRARIES = {{ libraries | tojson }};
+  let LAST_DATA = {};
+
+  function firstOnlineUuid() {
+    for (const lib of LIBRARIES) {
+      const e = LAST_DATA[lib.uuid];
+      if (e && !e.stale && e.daemon_alive) return lib.uuid;
+    }
+    return null;
+  }
+
+  function render(lib, entry) {
+    const stateEl = document.getElementById("state-" + lib.uuid);
+    const bodyEl  = document.getElementById("local-body-" + lib.uuid);
+    const fbEl    = document.getElementById("feedback-" + lib.uuid);
+
+    if (!entry || entry.stale) {
+      stateEl.innerHTML = '<div class="offline-note">Container offline.</div>';
+      bodyEl.innerHTML = '<tr><td colspan="4" class="hint">No data.</td></tr>';
+    } else {
+      stateEl.innerHTML = '<span class="hint">Last seen ' + ago(entry.seconds_ago) + '</span>';
+      const repos = entry.local_repos || [];
+      if (!repos.length) {
+        bodyEl.innerHTML = '<tr><td colspan="4" class="hint">No libraries synced.</td></tr>';
+      } else {
+        bodyEl.innerHTML = repos.map(r =>
+          '<tr><td>' + (r.name || "—") + '</td>' +
+          '<td class="mono">' + (r.id ? r.id.slice(0, 8) : "—") + '</td>' +
+          '<td class="mono">' + (r.worktree || "—") + '</td>' +
+          '<td><button class="btn btn-danger" onclick="confirmDesync(\'' + lib.uuid + '\',\'' +
+            (r.name || "").replace(/'/g, "\\'") + '\',\'' + (r.worktree || "") + '\')">Desync</button></td></tr>'
+        ).join("");
+      }
+    }
+
+    const res = (entry && entry.recent_results || []).find(r => r.verb === "desync");
+    const pending = (entry && entry.pending_commands || []).filter(c => c.verb === "desync");
+    if (pending.length) {
+      fbEl.innerHTML = '<div class="pending-note">Desync queued…</div>';
+    } else if (res) {
+      fbEl.innerHTML = '<div class="result ' + (res.ok ? "ok" : "fail") + '">' +
+        (res.ok ? "✓ " : "✗ ") + (res.output || res.error || "") + '</div>';
+    } else {
+      fbEl.innerHTML = "";
+    }
+  }
+
+  function confirmDesync(uuid, name, worktree) {
+    openConfirm(
+      "Stop syncing",
+      "This removes the local sync mapping for <b>" + name + "</b> (the server copy is " +
+      "kept; the NAS folder is left in place). Type the library name to confirm.",
+      name,
+      async function () {
+        const fb = document.getElementById("feedback-" + uuid);
+        try {
+          await queueCommand(uuid, "desync", {worktree}, true);
+          fb.innerHTML = '<div class="pending-note">Desync queued — applies within ~30s.</div>';
+        } catch (e) { fb.innerHTML = '<div class="result fail">Failed: ' + e.message + '</div>'; }
+        setTimeout(refresh, 1500);
+      }
+    );
+  }
+
+  async function listRemote(btn) {
+    const out = document.getElementById("list-remote-out");
+    const uuid = firstOnlineUuid();
+    if (!uuid) { out.innerHTML = '<div class="result fail">No container is online to run this.</div>'; return; }
+    btn.disabled = true;
+    out.innerHTML = '<div class="pending-note">Requested — results appear when the NAS replies (~30s)…</div>';
+    try {
+      await queueCommand(uuid, "list_remote", {}, false);
+      window._watchVerb = {uuid, verb: "list_remote", el: "list-remote-out"};
+    } catch (e) {
+      out.innerHTML = '<div class="result fail">Failed: ' + e.message + '</div>';
+    } finally { btn.disabled = false; }
+  }
+
+  function createLib() {
+    const name = document.getElementById("create-name").value.trim();
+    const desc = document.getElementById("create-desc").value.trim();
+    const enc  = document.getElementById("create-enc").value;
+    if (!name) { alert("Enter a library name."); return; }
+    const uuid = firstOnlineUuid();
+    if (!uuid) { document.getElementById("create-out").innerHTML =
+      '<div class="result fail">No container is online to run this.</div>'; return; }
+    openConfirm(
+      "Create library",
+      "Create a new server library named <b>" + name + "</b>? Type the name to confirm.",
+      name,
+      async function () {
+        const out = document.getElementById("create-out");
+        out.innerHTML = '<div class="pending-note">Create queued — result appears when the NAS replies (~30s)…</div>';
+        try {
+          await queueCommand(uuid, "create", {name, desc, enc_password: enc}, true);
+          window._watchVerb = {uuid, verb: "create", el: "create-out"};
+        } catch (e) { out.innerHTML = '<div class="result fail">Failed: ' + e.message + '</div>'; }
+      }
+    );
+  }
+
+  // Show the output of an on-demand list_remote / create once it comes back.
+  function pollWatched() {
+    const w = window._watchVerb;
+    if (!w) return;
+    const entry = LAST_DATA[w.uuid];
+    const res = (entry && entry.recent_results || []).find(r => r.verb === w.verb);
+    if (res) {
+      document.getElementById(w.el).innerHTML =
+        '<div class="result ' + (res.ok ? "ok" : "fail") + '">' + (res.ok ? "✓ done" : "✗ failed") + '</div>' +
+        '<pre class="output">' + (res.output || res.error || "(no output)") + '</pre>';
+      window._watchVerb = null;
+    }
+  }
+
+  async function refresh() {
+    try {
+      const resp = await fetch(STATUS_URL);
+      if (!resp.ok) return;
+      LAST_DATA = await resp.json();
+      LIBRARIES.forEach(lib => render(lib, LAST_DATA[lib.uuid] || null));
+      pollWatched();
+      document.getElementById("refresh-note").textContent = "Last refreshed: " + new Date().toLocaleTimeString();
+    } catch (e) {
+      document.getElementById("refresh-note").textContent = "Refresh failed — retrying…";
+    }
+  }
+  refresh();
+  setInterval(refresh, 10000);
+</script>
+{% endblock %}

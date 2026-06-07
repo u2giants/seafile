@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Sync Controls — POP Creations{% endblock %}
+
+{% block content %}
+  <h1 class="page-heading">Sync Controls</h1>
+  <p class="page-sub">
+    Start, stop, pause and resume each library's sync. Commands are picked up by
+    the NAS on its next status report, so they apply within ~30&nbsp;seconds.
+  </p>
+
+  <div id="cards">
+    {% for lib in libraries %}
+    <div class="card" id="card-{{ lib.uuid }}">
+      <div class="card-header">
+        <h2>{{ lib.name }}</h2>
+        <span class="uuid">{{ lib.uuid }}</span>
+      </div>
+      <div id="state-{{ lib.uuid }}"><div class="offline-note">Loading…</div></div>
+      <div class="btn-row" id="btns-{{ lib.uuid }}" style="margin-top:14px;"></div>
+      <div id="feedback-{{ lib.uuid }}"></div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <p class="refresh-note" id="refresh-note">Refreshing…</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const LIBRARIES = {{ libraries | tojson }};
+
+  function stateBadge(entry) {
+    if (entry.stale) return '<span class="badge idle">Offline</span>';
+    if (!entry.daemon_alive) return '<span class="badge error">Daemon stopped</span>';
+    if (entry.paused) return '<span class="badge paused">Paused</span>';
+    const repo = (entry.repos && entry.repos[0]) || null;
+    const st = repo ? repo.state : null;
+    if (st === "synchronized") return '<span class="badge ok">Synchronized</span>';
+    if (st === "uploading" || st === "downloading") return '<span class="badge busy">' + st + '</span>';
+    if (st === "error") return '<span class="badge error">Error</span>';
+    return '<span class="badge idle">' + (st || "Idle") + '</span>';
+  }
+
+  async function send(uuid, verb, args, confirm, btn) {
+    const fb = document.getElementById("feedback-" + uuid);
+    if (btn) btn.disabled = true;
+    try {
+      await queueCommand(uuid, verb, args, confirm);
+      fb.innerHTML = '<div class="pending-note">"' + verb + '" queued — applies within ~30s.</div>';
+    } catch (e) {
+      fb.innerHTML = '<div class="result fail">Failed: ' + e.message + '</div>';
+    } finally {
+      if (btn) btn.disabled = false;
+      setTimeout(refresh, 1500);
+    }
+  }
+
+  function render(lib, entry) {
+    const stateEl = document.getElementById("state-" + lib.uuid);
+    const btnsEl  = document.getElementById("btns-" + lib.uuid);
+    const fbEl    = document.getElementById("feedback-" + lib.uuid);
+
+    if (!entry) {
+      stateEl.innerHTML = '<div class="offline-note">No report received yet — the container may be stopped.</div>';
+      btnsEl.innerHTML = "";
+      return;
+    }
+
+    stateEl.innerHTML = stateBadge(entry) +
+      ' <span class="hint" style="margin-left:8px;">Last seen ' + ago(entry.seconds_ago) + '</span>';
+
+    if (entry.stale) {
+      btnsEl.innerHTML = '<span class="offline-note">Controls available once the container is reporting.</span>';
+    } else {
+      let html = "";
+      if (entry.paused) {
+        html += '<button class="btn btn-blue" onclick="send(\'' + lib.uuid + '\',\'resume\',{},false,this)">Resume sync</button>';
+      } else {
+        html += '<button class="btn btn-default" onclick="send(\'' + lib.uuid + '\',\'pause\',{},false,this)">Pause sync</button>';
+      }
+      html += '<button class="btn btn-default" onclick="send(\'' + lib.uuid + '\',\'restart\',{},false,this)">Restart daemon</button>';
+      html += '<button class="btn btn-danger" onclick="confirmStop(\'' + lib.uuid + '\',\'' + lib.name.replace(/'/g, "\\'") + '\')">Stop daemon</button>';
+      btnsEl.innerHTML = html;
+    }
+
+    // Surface the most recent command result for these verbs.
+    const verbs = ["pause", "resume", "restart", "stop"];
+    const res = (entry.recent_results || []).find(r => verbs.includes(r.verb));
+    const pending = (entry.pending_commands || []).filter(c => verbs.includes(c.verb));
+    if (pending.length) {
+      fbEl.innerHTML = '<div class="pending-note">' + pending.length + ' command(s) queued, waiting for the NAS…</div>';
+    } else if (res) {
+      fbEl.innerHTML = '<div class="result ' + (res.ok ? "ok" : "fail") + '">' +
+        (res.ok ? "✓ " : "✗ ") + res.verb + ": " + (res.output || res.error || "") + '</div>';
+    } else {
+      fbEl.innerHTML = "";
+    }
+  }
+
+  function confirmStop(uuid, name) {
+    openConfirm(
+      "Stop daemon",
+      "This stops the sync daemon for <b>" + name + "</b>. The container's restart " +
+      "policy will relaunch it shortly — to keep it down, stop the container itself " +
+      "(see the Libraries page). Type the library name to confirm.",
+      name,
+      function () { send(uuid, "stop", {}, true, null); }
+    );
+  }
+
+  async function refresh() {
+    try {
+      const resp = await fetch(STATUS_URL);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      LIBRARIES.forEach(lib => render(lib, data[lib.uuid] || null));
+      document.getElementById("refresh-note").textContent = "Last refreshed: " + new Date().toLocaleTimeString();
+    } catch (e) {
+      document.getElementById("refresh-note").textContent = "Refresh failed — retrying…";
+    }
+  }
+  refresh();
+  setInterval(refresh, 10000);
+</script>
+{% endblock %}
