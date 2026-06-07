@@ -23,7 +23,8 @@ Seafile sessionid cookie belonging to a system admin is allowed in. No
 separate login required — the user's existing Seafile session is reused.
 
 Env vars:
-  SEAFILE_INTERNAL_URL  Base URL for Seafile's internal API (default: http://seafile:8000)
+  SEAFILE_INTERNAL_URL  Base URL for Seafile's internal API (default: http://seafile — the
+                        seafile container's nginx on :80; Seahub's :8000 is localhost-only)
   SEAFILE_PUBLIC_HOST   Public hostname used in the Cookie/Host header (default: seafile.designflow.app)
   SECRET_KEY            Required. Random string for Flask session signing.
   STATUS_TOKEN          Shared secret the NAS containers send with status reports.
@@ -142,7 +143,7 @@ app.secret_key = os.environ.get("SECRET_KEY", "")
 if not app.secret_key:
     raise RuntimeError("SECRET_KEY env var is required")
 
-_SEAFILE_INTERNAL = os.environ.get("SEAFILE_INTERNAL_URL", "http://seafile:8000").rstrip("/")
+_SEAFILE_INTERNAL = os.environ.get("SEAFILE_INTERNAL_URL", "http://seafile").rstrip("/")
 _SEAFILE_PUBLIC_HOST = os.environ.get("SEAFILE_PUBLIC_HOST", "seafile.designflow.app")
 _SEAFILE_ADMIN_API = f"{_SEAFILE_INTERNAL}/api/v2.1/admin/sysinfo/"
 _SEAFILE_LOGIN_URL = f"https://{_SEAFILE_PUBLIC_HOST}/accounts/login/"
@@ -253,8 +254,14 @@ def is_seafile_admin() -> bool:
 
 
 def _login_redirect():
-    """Redirect an unauthenticated browser to the Seafile login, then back here."""
-    next_url = urllib.parse.quote(request.path, safe="")
+    """Redirect an unauthenticated browser to the Seafile login, then back here.
+
+    Caddy strips the /nas-settings prefix before the request reaches Flask, so
+    request.path is the stripped path (e.g. "/"). Prepend script_root
+    ("/nas-settings") so `next` returns the user to the panel, not Seafile's root.
+    """
+    full_path = request.script_root + request.path
+    next_url = urllib.parse.quote(full_path, safe="")
     return redirect(f"{_SEAFILE_LOGIN_URL}?next={next_url}")
 
 

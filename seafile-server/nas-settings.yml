@@ -10,7 +10,9 @@ services:
     environment:
       - SECRET_KEY=${NAS_SETTINGS_SECRET_KEY}
       - STATUS_TOKEN=${NAS_STATUS_TOKEN}
-      - SEAFILE_INTERNAL_URL=http://seafile:8000
+      # Reach Seahub via the seafile container's nginx on :80. Seahub's gunicorn
+      # binds 127.0.0.1:8000 (not reachable from other containers), so :8000 is refused.
+      - SEAFILE_INTERNAL_URL=http://seafile
       - SEAFILE_PUBLIC_HOST=seafile.designflow.app
     labels:
       caddy: https://seafile.designflow.app
