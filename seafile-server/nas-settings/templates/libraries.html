@@ -69,9 +69,61 @@
           <code>-staging</code> / <code>-data</code> volumes.</li>
         <li>Add the library to <code>LIBRARIES</code> in
           <code>seafile-server/nas-settings/app.py</code> so it appears in this panel.</li>
-        <li>Commit, let CI publish the image, then redeploy the seaf-cli stack on the NAS
-          (see <code>synology-seaf-cli/README.md</code>).</li>
+        <li>Commit, let CI publish the image, then recreate the seaf-cli stack on the NAS
+          (commands below).</li>
       </ol>
+    </div>
+  </div>
+
+  <!-- When a NAS-side restart/recreate is needed, and exactly how -->
+  <div class="card">
+    <div class="card-header"><h2>Restarting or updating the NAS containers</h2></div>
+    <p class="hint">
+      Almost everything on this panel applies automatically within ~30&nbsp;seconds —
+      <b>no restart needed</b>: pause/resume, restart/stop daemon, config changes, desync,
+      create. You only touch the NAS for these two cases:
+    </p>
+    <table class="data" style="margin:8px 0 4px;">
+      <thead><tr><th>Situation</th><th>Action needed</th></tr></thead>
+      <tbody>
+        <tr><td>Make an <b>Ingest&nbsp;Window</b> change take effect <em>now</em> (otherwise it applies within 1&nbsp;hour)</td><td><b>Restart</b> the container</td></tr>
+        <tr><td>Pick up a <b>new image</b> (after a code update) or a <b>new folder/library</b> (compose change)</td><td><b>Recreate</b> the container</td></tr>
+      </tbody>
+    </table>
+
+    <div class="guidance">
+      <h3>Restart — easiest (Synology Container Manager, no commands)</h3>
+      <ol>
+        <li>Open <b>DSM → Container Manager → Container</b>.</li>
+        <li>Tick <code>seaf-cli-char-licensed</code> and <code>seaf-cli-generic-decor</code>.</li>
+        <li>Click <b>Action → Restart</b> (or <b>Start</b> if they're stopped).</li>
+      </ol>
+    </div>
+
+    <div class="guidance">
+      <h3>Restart — over SSH</h3>
+      <p class="hint" style="margin-bottom:8px;">
+        Docker isn't on the PATH on Synology, so use its full path. Restart works from
+        <b>any directory</b> (it acts on the container by name):
+      </p>
+      <pre class="output">sudo /var/packages/ContainerManager/target/usr/bin/docker \
+  restart seaf-cli-char-licensed seaf-cli-generic-decor</pre>
+    </div>
+
+    <div class="guidance">
+      <h3>Recreate with a new image (after a code update)</h3>
+      <p class="hint" style="margin-bottom:8px;">
+        A restart reuses the existing image, so to pick up a new build you must <b>recreate</b>.
+        That uses the compose file, which this deployment stages at
+        <code>/tmp/seaf-cli-compose.yml</code> (it's this repo's
+        <code>synology-seaf-cli/docker-compose.yml</code>) with <code>/tmp/.env</code> holding the
+        sync credentials. Run from <code>/tmp</code>:
+      </p>
+      <pre class="output">cd /tmp
+DOCKER=/var/packages/ContainerManager/target/usr/bin/docker
+sudo $DOCKER pull ghcr.io/u2giants/seafile:seaf-cli-latest
+sudo $DOCKER compose -f /tmp/seaf-cli-compose.yml --env-file /tmp/.env up -d --force-recreate</pre>
+      <p class="hint">Full staging/rollback steps: <code>synology-seaf-cli/README.md</code> → "Updating the image".</p>
     </div>
   </div>
 
