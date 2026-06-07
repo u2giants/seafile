@@ -174,6 +174,77 @@ Rclone is a utility tool, not a production LucidLink replacement for this use ca
 
 ---
 
+## Seafile / SeaDrive
+
+Seafile deserves a separate role in this plan because it is already running and it fits the WFH macOS reality better than Resilio's documented file-locking model.
+
+Seafile should not be treated as a perfect LucidLink clone. It is better understood as the WAN transport and local-cache layer that PopDAM can control.
+
+Recommended Seafile role:
+
+- Data transport plane for WFH designers.
+- Local cache/on-demand file access through SeaDrive, especially on macOS.
+- Background block-oriented sync so PopDAM Helper does not need to move every large file synchronously from NYC over HTTP.
+- Remote access layer for designers who should not mount the NYC NAS directly over SMB/Tailscale.
+- Server-side hub that can sync or export back to Synology so owned NAS infrastructure remains in the loop.
+
+Why this is strategically attractive:
+
+- It uses infrastructure we already have instead of introducing another major platform first.
+- SeaDrive gives macOS users a Finder-visible workspace without requiring a full 20 TB local sync.
+- Seafile Professional supports file locking in the web app and desktop clients; its user manual describes lock/unlock from Finder on macOS and read-only behavior when another user holds a lock.
+- PopDAM can use Seafile as "muscle" while keeping checkout state, workflow policy, and audit history in Supabase.
+
+Important limitation:
+
+Seafile's automatic locking documentation is strongest for Microsoft Office files. Adobe PSD/AI workflows should not assume automatic application-level locking will be enough. For Adobe files, PopDAM should explicitly acquire a PopDAM checkout before allowing edit, and the Helper should explicitly lock or gate the file workflow.
+
+The better architecture is:
+
+```
+PopDAM / Supabase = brain, checkout state, audit, permissions
+POP DAM Helper    = user workflow, open/check-in/check-out, local orchestration
+Seafile / SeaDrive = WAN transport, local cache, background sync
+Synology NAS      = owned storage, backup/mirror/emergency cutover
+```
+
+In this model, PopDAM Helper should prefer the local SeaDrive cache when it is fresh and available. If a file is not hydrated locally, Helper should ask SeaDrive/Seafile to hydrate it or download through Seafile, rather than pulling directly from NYC over slow SMB or a synchronous NAS HTTP path. Check-in should similarly hand the completed file to Seafile's sync/cache layer while PopDAM tracks the checkout lifecycle and final verification.
+
+This does not remove the need for PopDAM locks. It changes who moves the bytes.
+
+Suggested PopDAM + Seafile workflow:
+
+1. User clicks **Check Out & Open** in PopDAM.
+2. PopDAM creates an atomic `asset_checkouts` row in Supabase.
+3. Helper maps the PopDAM asset path to the corresponding SeaDrive path.
+4. Helper confirms the local SeaDrive file is current or triggers hydration.
+5. Helper copies the current file into a private local workspace or opens a controlled working copy.
+6. User edits locally.
+7. Helper snapshots the result and checks it in.
+8. Seafile handles WAN transfer in the background.
+9. PopDAM verifies server-side state and releases the checkout only after the new version is safely present.
+
+Where Seafile should be used:
+
+- WFH macOS designers' day-to-day access path.
+- Local cache/hydration for large design files.
+- Background WAN transfer.
+- PopDAM Helper integration.
+- Synology mirror/export/cutover support.
+
+Where Seafile should not be the only safety mechanism:
+
+- It should not be trusted alone to prevent Adobe overwrite conflicts.
+- It should not replace PopDAM's checkout state machine.
+- It should not leave designers free to edit directly in shared folders without PopDAM workflow enforcement.
+
+Sources checked:
+
+- Seafile file locking user manual: https://help.seafile.com/sharing_collaboration/file_locking/
+- SeaDrive for macOS manual: https://help.seafile.com/drive_client/drive_client_for_macos/
+
+---
+
 ## Resilio Active Everywhere
 
 Resilio Active Everywhere may be strategically more aligned with our business goals than JuiceFS, even though JuiceFS is more architecturally similar to LucidLink.
@@ -205,6 +276,34 @@ Tradeoffs:
 Recommended role:
 
 Resilio Active Everywhere should be tested first if the top priority is business continuity and keeping Synology NASes ready to take over.
+
+MacOS file-locking reality:
+
+After checking Resilio's current documentation, Resilio should not be assumed to provide direct file-lock enforcement on WFH macOS workstations. Their file-locking documentation lists the file-locking feature's supported platform as Windows x64 10 and newer. It also says Windows, Linux, and macOS Agents can take the Lock Server role, but agents on other operating systems can participate without imposing locks on locally opened files.
+
+That distinction matters. A macOS agent that can participate in a job or act as a lock server is not the same as a macOS designer workstation that enforces "this PSD is read-only because someone else has it open" inside Finder/Adobe workflows.
+
+Because all WFH remote designers are on macOS, Resilio should be demoted from "test first for WFH editing" to "test only for server/NAS replication, cache gateways, or site-to-site continuity unless the vendor confirms macOS lock enforcement in writing and demonstrates it with Adobe files."
+
+Where Resilio may still fit:
+
+- NAS-to-NAS replication.
+- NYC to branch-office server replication.
+- Server/cache gateway synchronization.
+- Keeping owned infrastructure hot as an exit path.
+- Moving large datasets between storage systems faster than ordinary sync tools.
+
+Where Resilio should not be assumed to fit:
+
+- Direct WFH macOS designer editing with lock enforcement.
+- Replacing PopDAM checkout/check-in.
+- Replacing Seafile/SeaDrive as the primary macOS user-facing cache layer unless a vendor-led macOS POC proves lock enforcement.
+
+Sources checked:
+
+- Resilio file locking documentation: https://www.resilio.com/documentation/content/advanced-configuration/mc-and-jobs/file_locking/
+- Resilio Active Everywhere file-locking feature page: https://www.resilio.com/active-everywhere/features/file-locking/
+- Resilio roadmap noting macOS kernel-extension/user-experience work: https://helpdesk.resilio.com/hc/en-us/articles/41088800035475-Resilio-Active-Everywhere-2024-2025-Roadmap
 
 ---
 
@@ -318,7 +417,7 @@ TeamCache cache is not the master data. It is disposable/rebuildable cache. The 
 
 ## Recommended Architecture Direction
 
-There are three realistic paths.
+There are now four realistic paths.
 
 ### Path A: Stay with LucidLink, reduce risk
 
@@ -358,6 +457,10 @@ Test Resilio with:
 - Conflict behavior tests.
 - Local disk usage tests.
 
+MacOS caveat:
+
+This path is no longer the recommended first test for WFH designer workstations unless Resilio confirms and demonstrates macOS lock enforcement. It remains relevant for NAS/server replication and business-continuity testing.
+
 ### Path C: Test JuiceFS as the open-source LucidLink-like option
 
 This is the best open-source technical experiment.
@@ -383,41 +486,59 @@ A JuiceFS production setup would need:
 - Synology mirror/export process.
 - Regular restore testing.
 
+### Path D: Use Seafile as transport, PopDAM as workflow control
+
+This is now the most practical near-term path because Seafile is already present and WFH designers are on macOS.
+
+Use:
+
+- Seafile/SeaDrive for file transport, local hydration, and background sync.
+- PopDAM/Supabase for checkout locks, audit, file state, and permissions.
+- POP DAM Helper for opening controlled working copies and check-in/check-out UX.
+- Synology as backup/mirror/emergency source of truth.
+- Optional Resilio only for server/NAS replication if it proves valuable.
+
+This path avoids asking PopDAM to synchronously download giant files from NYC and avoids depending on Resilio macOS file-lock enforcement that is not clearly supported by the current documentation.
+
 ---
 
 ## Recommended Ranking for Our Use Case
 
-1. LucidLink  
+1. PopDAM + Seafile / SeaDrive  
+   Best near-term fit if LucidLink is out of the question and WFH users are on macOS. Seafile moves/cache files; PopDAM controls workflow and locks.
+
+2. LucidLink  
    Best user experience and collaboration filesystem, but expensive and proprietary.
 
-2. Resilio Active Everywhere  
-   Best fit for keeping Synology/local hardware involved and maintaining an exit path.
+3. Resilio Active Everywhere  
+   Best fit for keeping Synology/local hardware involved and maintaining an exit path, but not currently proven as a direct macOS WFH locking solution.
 
-3. JuiceFS  
+4. JuiceFS  
    Best open-source architectural alternative, but requires real engineering and support.
 
-4. Mountain Duck  
+5. Mountain Duck  
    Useful for auxiliary cloud access, not the primary shared design filesystem.
 
-5. Rclone  
+6. Rclone  
    Excellent utility/migration tool, not safe for live multi-user design collaboration.
 
-6. Synology Drive alone  
+7. Synology Drive alone  
    Not sufficient for intercontinental live collaboration on large creative files.
 
 ---
 
 ## Current Decision
 
-Do not immediately replace LucidLink with JuiceFS, Mountain Duck, or rclone.
+Do not immediately replace LucidLink with JuiceFS, Mountain Duck, rclone, or Resilio as the direct WFH macOS editing client.
 
 Recommended next step:
 
 Run a controlled POC comparing:
 
-1. Resilio Active Everywhere.
-2. JuiceFS.
-3. LucidLink baseline, optionally with TeamCache for NYC.
+1. PopDAM Helper + Seafile/SeaDrive.
+2. Resilio Active Everywhere for NAS/server replication, not as the first macOS locking answer.
+3. JuiceFS only if we are willing to own a filesystem engineering project.
+4. LucidLink baseline only for reference, since cost rules it out.
 
 The POC must use real files, real users, and deliberate conflict tests.
 
@@ -443,7 +564,11 @@ If the priority is the best possible remote design experience:
 
 If the priority is avoiding LucidLink lock-in while keeping NASes ready:
 
-- Test Resilio Active Everywhere first.
+- Use Seafile with PopDAM workflow control first; test Resilio for NAS/server replication second.
+
+If the priority is direct WFH macOS designer workflow:
+
+- Prefer PopDAM Helper + Seafile/SeaDrive over Resilio unless Resilio proves macOS lock enforcement with Adobe files.
 
 If the priority is open source and lowest software cost:
 
