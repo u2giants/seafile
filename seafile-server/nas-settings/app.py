@@ -20,6 +20,7 @@ import datetime
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -93,7 +94,7 @@ if not app.secret_key:
 _SEAFILE_INTERNAL = os.environ.get("SEAFILE_INTERNAL_URL", "http://seafile:8000").rstrip("/")
 _SEAFILE_PUBLIC_HOST = os.environ.get("SEAFILE_PUBLIC_HOST", "seafile.designflow.app")
 _SEAFILE_ADMIN_API = f"{_SEAFILE_INTERNAL}/api/v2.1/admin/sysinfo/"
-_SEAFILE_LOGIN_URL = f"https://{_SEAFILE_PUBLIC_HOST}/oauth/login/"
+_SEAFILE_LOGIN_URL = f"https://{_SEAFILE_PUBLIC_HOST}/accounts/login/"
 _STATUS_TOKEN = os.environ.get("STATUS_TOKEN", "")
 
 app.wsgi_app = PrefixMiddleware(app.wsgi_app, prefix="/nas-settings")
@@ -192,7 +193,8 @@ def is_seafile_admin() -> bool:
 @app.route("/", methods=["GET", "POST"])
 def index():
     if not is_seafile_admin():
-        return redirect(_SEAFILE_LOGIN_URL)
+        next_url = urllib.parse.quote(request.path, safe="")
+        return redirect(f"{_SEAFILE_LOGIN_URL}?next={next_url}")
 
     settings = load_settings()
     saved = False
@@ -235,7 +237,8 @@ def index():
 @app.route("/status")
 def status_page():
     if not is_seafile_admin():
-        return redirect(_SEAFILE_LOGIN_URL)
+        next_url = urllib.parse.quote(request.path, safe="")
+        return redirect(f"{_SEAFILE_LOGIN_URL}?next={next_url}")
     return render_template("status.html", libraries=LIBRARIES)
 
 
