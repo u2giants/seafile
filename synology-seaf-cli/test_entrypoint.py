@@ -35,18 +35,22 @@ def fake_run(args, timeout=120):
 c._run_seaf = fake_run
 c._refresh_config_cache = lambda: setattr(c, "_config_cache", {})
 
+class FakeRepo:
+    def __init__(self, rid): self.id = rid; self.name = "lib"; self.auto_sync = 1
 class FakeRpc:
-    def __init__(self): self.disabled = None
-    def disable_auto_sync(self): self.disabled = True
-    def enable_auto_sync(self): self.disabled = False
+    def __init__(self): self.props = {}; self._repos = [FakeRepo("repo1")]
+    def get_repo_list(self, a, b): return self._repos
+    def set_repo_property(self, rid, key, value): self.props[(rid, key)] = value
 c.rpc = FakeRpc()
 
 def disp(verb, args=None):
     calls.clear()
     return c._dispatch_command({"id": "cmd1", "verb": verb, "args": args or {}})
 
-check("pause -> rpc disable", disp("pause")["ok"] and c.rpc.disabled is True)
-check("resume -> rpc enable", disp("resume")["ok"] and c.rpc.disabled is False)
+check("pause -> set auto-sync false",
+      disp("pause")["ok"] and c.rpc.props[("repo1", "auto-sync")] == "false")
+check("resume -> set auto-sync true",
+      disp("resume")["ok"] and c.rpc.props[("repo1", "auto-sync")] == "true")
 check("config_set -> config -k -v",
       disp("config_set", {"key": "upload_limit", "value": 1024})["ok"]
       and calls == [["config", "-k", "upload_limit", "-v", "1024"]])

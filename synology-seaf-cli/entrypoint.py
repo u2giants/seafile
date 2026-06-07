@@ -310,10 +310,14 @@ class Client:
             except Exception:
                 pass
 
+        # "Paused" reflects the per-repo auto-sync property (there is no global
+        # toggle in this client): paused when every synced repo has auto-sync off.
         paused = False
         if hasattr(self, "rpc"):
             try:
-                paused = not self.rpc.is_auto_sync_enabled()
+                rl = self.rpc.get_repo_list(-1, -1)
+                if rl:
+                    paused = all(not r.auto_sync for r in rl)
             except Exception:
                 pass
 
@@ -392,14 +396,21 @@ class Client:
                   "finished_at": datetime.datetime.utcnow().isoformat() + "Z"}
         try:
             if verb in ("pause", "resume"):
+                # This client's RpcClient has no global enable/disable_auto_sync;
+                # pausing is per-repo via the "auto-sync" property ("false"/"true").
                 if not hasattr(self, "rpc"):
                     raise RuntimeError("daemon not running")
-                if verb == "pause":
-                    self.rpc.disable_auto_sync()
-                    result.update(ok=True, output="auto-sync disabled")
-                else:
-                    self.rpc.enable_auto_sync()
-                    result.update(ok=True, output="auto-sync enabled")
+                value = "false" if verb == "pause" else "true"
+                repos = self.rpc.get_repo_list(-1, -1)
+                if not repos:
+                    raise RuntimeError("no synced library yet")
+                for repo in repos:
+                    self.rpc.set_repo_property(repo.id, "auto-sync", value)
+                result.update(
+                    ok=True,
+                    output=("paused" if verb == "pause" else "resumed")
+                    + f" {len(repos)} repo(s)",
+                )
 
             elif verb in ("restart", "stop"):
                 # Stop the daemon. watch() then exits and the container's
