@@ -1,1 +1,11 @@
-# Nothing to exclude — this is a lean config-only repo with no large packages or build artifacts.
+# Lean config-only repo — no node_modules/, dist/, build outputs, or vendored trees to exclude.
+# Generated/secret files (also in .gitignore) — never commit or feed to AI context:
+__pycache__/
+*.pyc
+.env
+CREDENTIALS.txt
+*.sql
+
+# Context economy (not path-ignored, just guidance): load docs via the "Documentation map"
+# in AGENTS.md rather than all at once. lucid.md is standalone storage-strategy research —
+# skip it unless the task is specifically about that strategy.

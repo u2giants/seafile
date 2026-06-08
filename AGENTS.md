@@ -13,13 +13,15 @@ This is mostly an **infrastructure configuration repo**. Two images are CI-built
 
 ---
 
-## Multi-Model Note
+## Multi-model AI note
 
 There is no universal ignore-file standard across AI coding tools.
-`.claudeignore` works for Claude Code; `.cursorignore` for Cursor;
-`.copilotignore` for GitHub Copilot. When using any other AI tool
-(Gemini, ChatGPT, etc.), paste this file as your first message
-and follow the instructions in the 'What to ignore' section.
+
+`.claudeignore` works for Claude Code.
+
+When using any other AI tool, paste this file as your first message and follow the instructions in the "What to ignore" section.
+
+(`.cursorignore` exists for Cursor with matching content; there is no `.copilotignore` — Copilot is not used here.)
 
 ---
 
@@ -72,19 +74,30 @@ seafile-repo/                    Root — GitHub: github.com/u2giants/seafile
 
 All files in this repo are **authored by this project** — there are no third-party packages or vendor directories. The two things built from upstream bases are the seaf-cli wrapper (`FROM flrnnc/seafile-client:latest`) and `nas-settings` (a Flask app); both layer our code on top rather than modifying vendor code in-repo.
 
-### Documentation map (avoid duplication)
+## Documentation map: what to read for each task
 
-| File | Scope |
-|------|-------|
-| `AGENTS.md` (this file) | Canonical operating guide for the whole repo — read first |
-| `README.md` | Short GitHub orientation |
-| `CLAUDE.md` | Claude Code-specific notes; points here |
-| `seafile-server/docs/*` | Deep reference for the VPS server component only |
-| `synology-seaf-cli/README.md` | seaf-cli image internals + NAS deploy |
-| `seafile-server/nas-settings/README.md` | nas-settings app internals |
-| `windows-workstation/README.md` | Windows cutover runbook |
+Always start with:
 
-There is intentionally **no top-level `docs/`** — component docs live beside the component they describe. Do not create a parallel top-level `docs/` tree; it would duplicate `seafile-server/docs/`.
+- `AGENTS.md` (this file)
+- `HANDOFF.md` **if it exists** (in-progress work — required reading before continuing anything)
+
+Then load additional docs only when relevant — do **not** ingest every `.md` file:
+
+| Task / question | Read these docs | Usually do not need |
+|---|---|---|
+| Quick repo orientation | `README.md`, `AGENTS.md` | `seafile-server/docs/*`; `lucid.md` (storage-strategy research notes) |
+| Modify project-owned code (nas-settings panel, seaf-cli wrapper) | `AGENTS.md`, the relevant folder README (`seafile-server/nas-settings/README.md` or `synology-seaf-cli/README.md`), `seafile-server/docs/architecture.md` if system design is affected | `seafile-server/docs/deployment.md` unless deploy behaviour changes |
+| Change configuration, env vars, secrets, or runtime settings | `AGENTS.md`, `seafile-server/docs/configuration.md`, `seafile-server/docs/deployment.md` if prod/runtime env is affected | unrelated architecture docs |
+| Change local dev / test / lint / debug workflow | `AGENTS.md`, `seafile-server/docs/development.md`, the relevant `test_*.py` and workflow files | `seafile-server/docs/deployment.md` unless CI/CD changes |
+| Change deployment, Docker, CI/CD, release, rollback, runtime env | `AGENTS.md` → Deployment, `seafile-server/docs/deployment.md`, `.github/workflows/*`, the relevant compose file | local-only dev docs |
+| Change Seafile accounts, libraries, OAuth, UUIDs, or other identifiers | `AGENTS.md` → Data Model + Idiosyncratic Decisions, `seafile-server/docs/architecture.md`, `seafile-server/docs/configuration.md` if env affected | deployment docs unless rollout changes |
+| Investigate bugs or incidents | `AGENTS.md` → Critical Incident Log + Idiosyncratic Decisions, `HANDOFF.md` if present, the doc for the affected area | unrelated folder READMEs |
+| Continue unfinished work | `AGENTS.md`, `HANDOFF.md`, the docs named inside `HANDOFF.md` | docs unrelated to the handoff scope |
+| Work in a subfolder with its own README | `AGENTS.md`, that folder README, only the broader docs it references | other folder READMEs |
+| Claude Code session | `CLAUDE.md`, then `AGENTS.md` | other docs unless the task needs them |
+| Documentation-only cleanup | `AGENTS.md`, `README.md`, affected docs under `seafile-server/docs/`, folder READMEs where relevant | source files except as needed to verify accuracy |
+
+There is intentionally **no top-level `docs/`** — component docs live beside the component they describe (`seafile-server/docs/`, folder READMEs). Do not create a parallel top-level `docs/` tree; it would duplicate `seafile-server/docs/`.
 
 ---
 
@@ -94,6 +107,19 @@ There is intentionally **no top-level `docs/`** — component docs live beside t
 
 **Scripts that say "DO NOT RUN AGAIN" are off-limits.** `CONFIGURE_OAUTH.sh` and `CREATE_NAS_SYNC_ACCOUNT.sh` have already been run against the live system. Running them again creates duplicates. See Idiosyncratic Decisions.
 
+### Custom-code boundary
+
+Everything in this repo is **project-owned** — there are no vendor, generated, or framework trees. Project logic lives in:
+
+- `seafile-server/nas-settings/` — the Flask control panel (`app.py`, `templates/`, `test_app.py`)
+- `synology-seaf-cli/` — the seaf-cli wrapper image (`Dockerfile`, `entrypoint.py`, `seaf-entrypoint.py`, `docker-compose.yml`, `test_entrypoint.py`)
+- `seafile-server/*.yml`, `seafile-server/*.sh` — VPS Docker Compose + operational scripts
+- `seafile-server/custom-templates/` — the **only** Seahub overrides (full-copy templates + an injected `<script>`; see Core Modification Inventory)
+- `.github/workflows/` — CI
+- docs: `*.md`, `seafile-server/docs/`
+
+Everything **outside** the repo — Seafile/Seahub source, the `flrnnc/seafile-client` base image, and runtime config/state on the hosts (`seahub_settings.py`, `/opt/seafile/.env`, the Seafile database) — is upstream or runtime. Do not scatter project logic into it. Seahub UI changes go through `custom-templates/` (volume-mounted), never by editing Seafile's installed files. Runtime/auth config changes are made on the host (they have no repo representation) and noted here — see Idiosyncratic Decisions and the CI/CD §25 exception.
+
 ---
 
 ## Core Modification Inventory
@@ -102,7 +128,8 @@ This project is original infrastructure config (not a fork). No upstream source 
 
 | File | Change made | Why it was necessary | Risk during upgrades |
 |------|-------------|----------------------|----------------------|
-| `seafile-server/custom-templates/sysadmin/sysadmin_react_app.html` | Overrides Seahub's sysadmin template to inject a sidebar link to `/nas-settings/` | Seafile has no plugin hook to add a custom admin page link | A Seafile UI upgrade can change this template; if the override drifts from upstream the sidebar may render stale. Re-diff against the new Seahub template after major server upgrades. |
+| `seafile-server/custom-templates/sysadmin/sysadmin_react_app.html` | Full copy of Seahub's sysadmin template + injected `<script>` adding a "NAS Sync Settings" link to the **System Admin** sidebar | Seafile has no plugin hook to add a custom admin page link | A Seafile UI upgrade can change the upstream template; re-diff against `/opt/seafile/seafile-pro-server-<ver>/seahub/seahub/templates/sysadmin/sysadmin_react_app.html` after major upgrades. |
+| `seafile-server/custom-templates/react_app.html` | Full copy of Seahub's main-app template + injected **admin-only** (`{% if user.is_staff %}`) `<script>` adding a "NAS Sync" link to the **main workspace** sidebar (`.side-nav-con .nav-container`) | Lets admins reach the panel from the normal Seafile UI without typing the URL; non-admins never see a dead link | Same upgrade risk — re-diff against `…/seahub/seahub/templates/react_app.html` (baseline 13.0.21). Validate it compiles before activating (see `custom-templates/README.md`); a syntax error breaks the main page for everyone after the next Seahub reload. |
 
 ---
 
@@ -116,8 +143,8 @@ This project is original infrastructure config (not a fork). No upstream source 
 ### If you need to add a new NAS folder sync:
 1. Identify the NAS path (ask Albert — paths are case-sensitive)
 2. Create a Seafile library via admin UI or API; record the UUID
-3. Add a new service block to `synology-seaf-cli/docker-compose.yml` following the existing pattern
-4. Deploy to NAS via NAS MCP (base64-encode docker commands — see the "NAS Docker commands must be base64-encoded" idiosyncratic decision below for the pattern)
+3. Add a new service block to `synology-seaf-cli/docker-compose.yml` following the existing pattern (and add the library to `LIBRARIES` in `seafile-server/nas-settings/app.py` so it shows in the panel)
+4. Commit + push; recreate the seaf-cli stack on **edgesynology1 over SSH** (the NAS MCP is read-only — see Deployment / `synology-seaf-cli/README.md`)
 5. Update the Container Inventory in this file
 6. Commit and push
 
@@ -165,7 +192,10 @@ This project is original infrastructure config (not a fork). No upstream source 
 | Change Seafile/MariaDB/Redis container config | `seafile-server/seafile-server.yml` | container names (Seafile-internal) |
 | Change reverse proxy (TLS, routing) | `seafile-server/caddy.yml` | enable Cloudflare proxy on the host |
 | Change nas-settings panel | `seafile-server/nas-settings/app.py` + `templates/`, `seafile-server/nas-settings.yml` | — |
-| Change the sysadmin sidebar link | `seafile-server/custom-templates/sysadmin/sysadmin_react_app.html` | unrelated Seahub templates |
+| Change the System Admin sidebar link | `seafile-server/custom-templates/sysadmin/sysadmin_react_app.html` | unrelated Seahub templates |
+| Change the main-workspace "NAS Sync" sidebar link | `seafile-server/custom-templates/react_app.html` | unrelated Seahub templates |
+| Add/run nas-settings tests | `seafile-server/nas-settings/test_app.py` | — |
+| Add/run seaf-cli dispatcher tests | `synology-seaf-cli/test_entrypoint.py` | — |
 | Change environment variables | `/opt/seafile/.env` on VPS (then update `.env.example` + docs) | committing real `.env` |
 | Change seahub settings (OAuth, time zone) | `/opt/seafile-data/seafile/conf/seahub_settings.py` on VPS | `CONFIGURE_OAUTH.sh` (do not re-run) |
 | Update architecture / config / deploy / debug docs | `seafile-server/docs/{architecture,configuration,deployment,development}.md` | — |
@@ -179,22 +209,24 @@ This is not an application with a custom data model. The data model is Seafile's
 
 ### Seafile Libraries (permanent UUIDs — never change)
 
-| Library name | UUID | NAS source path | Sync status (2026-06-05) |
+| Library name | UUID | NAS source path | Sync status (verified 2026-06-07) |
 |-------------|------|-----------------|--------------------------|
-| Character Licensed | `177cf9de-3066-482e-956a-7ae8d8786c6d` | `/volume1/mac/Decor/Character Licensed` | ⏸ Not syncing — seaf-cli container removed (see Critical Incident Log) |
-| Generic Decor | `1b116ab7-d66b-4411-a691-21f34eadb731` | `/volume1/mac/Decor/Generic Decor` | ⏸ Not syncing — seaf-cli container removed |
+| Character Licensed | `177cf9de-3066-482e-956a-7ae8d8786c6d` | `/volume1/mac/Decor/Character Licensed` | ✅ Syncing — `seaf-cli-char-licensed` running on edgesynology1 |
+| Generic Decor | `1b116ab7-d66b-4411-a691-21f34eadb731` | `/volume1/mac/Decor/Generic Decor` | ✅ Syncing — `seaf-cli-generic-decor` running on edgesynology1 |
 
 These are the only two libraries.
 
 ### Accounts
 
-| Account | Type | Purpose |
-|---------|------|---------|
-| u2giants@gmail.com | Local admin | Albert's primary admin. Note: signs in via the email/password form — the SSO button is now M365, so this Google address can no longer SSO |
-| albert@popcre.com | Local admin | Albert's fallback local account |
-| nas-sync@popcre.com | Local machine account | Used by seaf-cli containers to push files |
+The site has **not gone live** (designers not onboarded). Current accounts (`ccnet_db.EmailUser`; the `@auth.local` usernames are Seafile-internal IDs for SSO-created accounts — the human identity is in the profile's `contact_email`):
 
-SSO is **M365**, tenant-locked to POP Creations (Azure AD tenant `1caeb1c0-a087-4cb9-b046-a5e22404f971`). See Idiosyncratic Decisions.
+| Account (internal username) | Identity | Admin | Login | Purpose |
+|---|---|---|---|---|
+| `u2giants@gmail.com` | Albert (Google addr) | yes (`is_staff=1`) | email/password form only — the SSO button is M365, so this Google address can't SSO | Original local admin / fallback |
+| `4cba…@auth.local` | `albert@popcre.com` | yes (`is_staff=1`) | **M365 SSO** (`albert@popcre.com`) **and** local `albert` (break-glass, `login_id=albert`) | Albert's working admin. The single OAuth binding `albert@popcre.com → 4cba` resolves SSO here. |
+| `95520c9b…@auth.local` | `nas-sync@popcre.com` | no | password (used by seaf-cli `SEAF_USERNAME`/`SEAF_PASSWORD`) | Machine account that pushes files |
+
+SSO is **M365**, tenant-locked to POP Creations (Azure AD tenant `1caeb1c0-a087-4cb9-b046-a5e22404f971`). OAuth maps accounts by the Microsoft `email` claim (`OAUTH_ATTRIBUTE_MAP` in `seahub_settings.py`) via the `seahub_db.social_auth_usersocialauth` binding table. See Idiosyncratic Decisions + Critical Incident Log (duplicate-account binding issue).
 
 ---
 
@@ -216,12 +248,12 @@ These containers are defined by the upstream Seafile Docker Compose. Their names
 
 These follow the standard naming convention. Only run these OR the Windows containers — not both.
 
-**Current state (2026-06-06): both containers are running healthy on edgesynology1** — verified via `docker ps`.
+**Current state (verified 2026-06-07): both containers running on edgesynology1** (`ghcr.io/u2giants/seafile:seaf-cli-latest`). See Pending Work — a recreate is needed to pick up the pause/resume fix in `entrypoint.py`.
 
 | Container name | NAS path | Seafile library | UUID | Status |
 |---------------|----------|----------------|------|--------|
-| `seaf-cli-char-licensed` | `/volume1/mac/Decor/Character Licensed` | Character Licensed | `177cf9de-3066-482e-956a-7ae8d8786c6d` | ✅ Running (verified 2026-06-06) |
-| `seaf-cli-generic-decor` | `/volume1/mac/Decor/Generic Decor` | Generic Decor | `1b116ab7-d66b-4411-a691-21f34eadb731` | ✅ Running (verified 2026-06-06) |
+| `seaf-cli-char-licensed` | `/volume1/mac/Decor/Character Licensed` | Character Licensed | `177cf9de-3066-482e-956a-7ae8d8786c6d` | ✅ Running (verified 2026-06-07) |
+| `seaf-cli-generic-decor` | `/volume1/mac/Decor/Generic Decor` | Generic Decor | `1b116ab7-d66b-4411-a691-21f34eadb731` | ✅ Running (verified 2026-06-07) |
 
 ### Windows Workstation Containers (alternative deployment — not yet active)
 
@@ -238,7 +270,14 @@ There is no Coolify for this project. Containers are managed directly via Docker
 
 ## What to Ignore
 
-No large third-party packages are included in this repo. Nothing to ignore for AI context purposes.
+This is a lean config-only repo — there are no `node_modules/`, `dist/`, build outputs, vendored SDKs, or third-party trees to skip. The only things that should never enter the repo or your context:
+
+- `__pycache__/`, `*.pyc` — Python bytecode (git-ignored)
+- `.env`, `CREDENTIALS.txt`, `*.sql` — secrets / DB dumps (git-ignored; never commit, never paste)
+
+For **context economy**, don't ingest every doc — use the Documentation map above. In particular, `lucid.md` is standalone storage-strategy research (LucidLink/JuiceFS/Resilio evaluation) and is **not** needed for operating or changing this system; load it only if the task is specifically about that storage strategy.
+
+These match `.claudeignore` / `.cursorignore` (which carry only a comment, since there are no large dirs to exclude) and `.gitignore`.
 
 ---
 
@@ -298,11 +337,11 @@ No large third-party packages are included in this repo. Nothing to ignore for A
 **Why:** The community image uses this prefix. Using the wrong names results in a silently misconfigured container that starts but never syncs.
 **Do not change because:** These are hardcoded in the image entrypoint.
 
-### NAS Docker commands must be base64-encoded when run via MCP
-**Looks like:** An unnecessarily complex way to run docker commands.
-**Actually:** The Synology MCP `run_command` allowlist blocks any command string containing the word "docker". Base64 encoding bypasses the string match.
-**Why:** The MCP server's allowlist is a blunt substring filter.
-**Do not change because:** This is a workaround for the MCP server's design. Pattern: `CMD="..."; echo $(echo "$CMD" | base64) | base64 -d | bash`
+### NAS Docker commands must be base64-encoded when run via MCP — and the MCP is read-only
+**Looks like:** An unnecessarily complex way to run docker commands, and a way to deploy to the NAS.
+**Actually:** The Synology `nas-direct` MCP `run_command` allowlist blocks any string containing "docker"; base64-encoding bypasses the substring match for the **read-only** docker commands it permits (`ps`/`stats`/`inspect`/`logs`). It does **not** allow `docker run`/`compose up`/`start` (host-level control) or arbitrary file writes — those are blocked even base64-encoded. So the MCP is for read-only diagnosis + a few named Synology service restarts; **container deploys/recreates on the NAS are done over SSH by an operator**, not via the MCP.
+**Why:** The MCP allowlist is a blunt substring filter for the read-only surface; state-changing docker is intentionally denied.
+**Do not change because:** Don't document the MCP as a NAS deploy path — it isn't one. Read-only pattern: `CMD="docker ps ..."; echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'`
 
 ### Docker binary on Synology is not in PATH
 **Looks like:** Docker isn't installed on the NAS.
@@ -375,6 +414,36 @@ No large third-party packages are included in this repo. Nothing to ignore for A
 **Actually:** Bind mounts from Windows paths into Docker Desktop containers are unreliable for UNC paths (`\\server\share`). CIFS named volumes (`driver: local`, `type: cifs`) mount the SMB share from inside Docker's Linux VM (WSL2) using the kernel's CIFS stack — well-supported and the standard pattern for NAS-to-Docker-Desktop workflows.
 **Why:** Docker Desktop on Windows uses WSL2 (a Linux VM). Bind mounts work for local Windows paths but not for SMB paths. The CIFS volume driver mounts from inside that Linux VM, which can reach the NAS over the local network.
 **Do not change because:** If seaf-cli on the Windows machine can't reach the source files, it will simply sync an empty directory to Seafile — silently deleting the library. Always verify containers are healthy after deploy. If `edgesynology1` doesn't resolve from inside Docker, use the NAS IP address in the device paths.
+
+### nas-settings reaches Seahub via nginx on :80, not Seahub's :8000
+**Looks like:** The admin-session check should hit Seahub directly at `http://seafile:8000`.
+**Actually:** `SEAFILE_INTERNAL_URL=http://seafile` (port 80). Inside the `seafile` container, Seahub's gunicorn binds `127.0.0.1:8000` (localhost-only, unreachable from other containers); **nginx** listens on `0.0.0.0:80` and proxies to it.
+**Why:** Seafile 13's gunicorn binds localhost; `:8000` from the `nas-settings` container is connection-refused, which silently fails `is_seafile_admin()` and bounces every admin to the login page (→ Seafile's Files page). Routing via nginx `:80` fixes it.
+**Do not change because:** Reverting to `:8000` makes the whole panel inaccessible to admins again (the failure is silent — looks like an auth bug, not a connectivity one).
+
+### nas-settings pause/resume uses the per-repo `auto-sync` property, not a global toggle
+**Looks like:** Pausing should call a global `disable_auto_sync()` on the daemon.
+**Actually:** The seaf-cli 7.0.10 `SeafileRpcClient` in this image has **no** global `disable_auto_sync`/`enable_auto_sync` (only `is_auto_sync_enabled` read + `set_repo_property`). `entrypoint.py` pauses by `set_repo_property(repo_id, "auto-sync", "false")` (resume = `"true"`) for each synced repo, and the dashboard's "paused" badge is derived from per-repo `auto_sync`.
+**Why:** Verified by introspecting the actual image — the global setter does not exist; calling it raises `AttributeError` and the command silently fails.
+**Do not change because:** Reverting to a global `disable_auto_sync()` call breaks Pause/Resume (the method isn't there).
+
+### nas-settings control commands are routed by library UUID, not container hostname
+**Looks like:** Commands could be keyed by the container name/id.
+**Actually:** The browser posts `/api/command {library_uuid, verb}`; the NAS container polls `/api/status` and picks up its commands by `SEAF_LIBRARY` (the library UUID). Status/commands/results in the panel's `/data/*.json` are all keyed by library UUID.
+**Why:** A container's Docker hostname is an ephemeral hash (compose sets no `hostname:`), so it can't be a stable routing key — the library UUID is known to both sides and stable.
+**Do not change because:** Keying by container id/name (an earlier bug) means queued commands never match the reporting container, so Pause/Resume/etc. never take effect.
+
+### nas-settings image is CI-built + published, not built on the VPS
+**Looks like:** The panel is a local Flask app you'd `docker compose build` on the server.
+**Actually:** `.github/workflows/nas-settings-image.yml` tests + builds + pushes `ghcr.io/u2giants/seafile:nas-settings-latest` (+ `:nas-settings-sha-<commit>`). `nas-settings.yml` deploys that **published image** (`image:`), and deploy = pull on the VPS. There is no `build:` in the compose.
+**Why:** CI/CD rules (§2/§5/§18): production images must be CI-built, registry-published, and traceable to a commit — local builds aren't. Same §25 model as the seaf-cli image.
+**Do not change because:** Re-adding `build:` / building on the VPS reintroduces an untraceable, unverified production artifact. Roll back via `:nas-settings-sha-<older-commit>`.
+
+### The main-app "NAS Sync" sidebar link is admin-only and injected client-side
+**Looks like:** The link is missing for some logged-in users / didn't deploy.
+**Actually:** `custom-templates/react_app.html` injects it only when `{% if user.is_staff %}`, and it's added by a MutationObserver after the React app mounts. Non-admins correctly never see it. The panel itself is admin-gated too, so a non-admin would be bounced anyway.
+**Why:** Designers (non-admins) shouldn't see an admin-only control they can't use; and there's no Seafile plugin hook, so a client-side injection is the only way to add a main-nav link.
+**Do not change because:** If a developer "fixes" the missing link by removing the `is_staff` gate, every designer sees a link that just denies them. If the link is absent for an admin, check (a) you're actually on an admin account and (b) the template override is active — not the gate.
 
 ---
 
@@ -455,21 +524,28 @@ The org-wide CI/CD rules assume a deployment platform (Coolify) that GitHub Acti
 4. Apply changes: restart affected containers or apply config changes manually
 5. Verify with `docker compose -f /opt/seafile/seafile-server.yml -f /opt/seafile/caddy.yml ps`
 
-**NAS image changes (synology-seaf-cli/Dockerfile, entrypoint.py, seaf-entrypoint.py):**
+**nas-settings panel changes (seafile-server/nas-settings/):**
+1. Edit `app.py` / `templates/` / `Dockerfile`
+2. Commit to `main` and push → GitHub Actions (`nas-settings image`) tests, builds, and pushes `ghcr.io/u2giants/seafile:nas-settings-latest` (+ `:nas-settings-sha-<commit>`)
+3. After CI succeeds, on the VPS **pull** + recreate (do NOT `docker compose build` on the host):
+   `cd /opt/seafile && docker compose -f seafile-server.yml -f caddy.yml -f /home/ai/seafile-repo/seafile-server/nas-settings.yml pull nas-settings && … up -d nas-settings`
+4. **Rollback:** pin `image:` in `nas-settings.yml` to `:nas-settings-sha-<older-commit>` and `up -d`.
+   Template overrides (`custom-templates/`) are NOT part of this image — deploy them by copying into the Seahub custom dir + `docker restart seafile` (see `custom-templates/README.md`).
+
+**NAS image changes (synology-seaf-cli/Dockerfile, entrypoint.py, seaf-entrypoint.py, test_entrypoint.py):**
 1. Edit the relevant file in this repo
 2. Commit to `main` and push
-3. GitHub Actions (`seaf-cli image` workflow) builds and pushes both `ghcr.io/u2giants/seafile:seaf-cli-latest` and `ghcr.io/u2giants/seafile:sha-<commit>`
-4. After CI succeeds: pull the new image on the NAS and recreate containers (via NAS MCP base64 commands)
+3. GitHub Actions (`seaf-cli image` workflow) lints + tests + pushes both `ghcr.io/u2giants/seafile:seaf-cli-latest` and `ghcr.io/u2giants/seafile:sha-<commit>`
+4. After CI succeeds, on **edgesynology1**: `docker pull` the image and recreate containers. The NAS MCP cannot run `docker compose`/`start`/`run` (only read-only docker + named service restarts), so this step is done over SSH on the NAS. **`/tmp` is wiped on reboot**, so `/tmp/seaf-cli-compose.yml` + `/tmp/.env` usually need re-staging first (compose from this repo; env can be read from the running container — see `synology-seaf-cli/README.md`).
 5. **Rollback:** pin the affected service's `image:` to a known-good `ghcr.io/u2giants/seafile:sha-<older-commit>` and `up -d` — never rebuild on the host or hand-edit container state
 
 **NAS compose changes (synology-seaf-cli/docker-compose.yml):**
 1. Edit `synology-seaf-cli/docker-compose.yml` in this repo
 2. Commit and push
-3. Write the updated compose file to `/tmp/seaf-cli-compose.yml` on edgesynology1 via NAS MCP (base64+tee)
-4. Run `docker compose -f /tmp/seaf-cli-compose.yml up -d` (via base64-encoded NAS MCP command)
+3. Stage the updated compose to `/tmp/seaf-cli-compose.yml` on edgesynology1, then `docker compose -f /tmp/seaf-cli-compose.yml --env-file /tmp/.env up -d` (run on the NAS; full docker path `/var/packages/ContainerManager/target/usr/bin/docker`)
 
 **VPS access:** Claude Code runs on the VPS as `ai` user with passwordless sudo. Direct Bash commands work.
-**NAS access:** Via `nas-direct` MCP server at `https://nas-mcp.designflow.app/mcp` (bearer token). All docker commands must be base64-encoded.
+**NAS access:** Via the `nas-direct` MCP server (read-only docker + named service restarts only — base64-encode any docker command). Container recreates/deploys on the NAS are done over SSH by an operator, not via the MCP.
 
 ---
 
@@ -483,9 +559,31 @@ The org-wide CI/CD rules assume a deployment platform (Coolify) that GitHub Acti
 
 **Root cause:** Not yet determined. `docker events` for the last 72h showed no seaf-cli lifecycle events, so removal happened earlier than that. Candidates: a Container Manager reset/upgrade on the Synology, a manual removal, or a NAS event that dropped the containers despite `restart: unless-stopped`. The repo docs still claimed "✅ Running," which masked the outage.
 
-**Recovery (not yet performed):** Re-deploy from `synology-seaf-cli/docker-compose.yml` via the NAS MCP (base64 pattern), or proceed with the Windows cutover instead. The existing data volumes mean seaf-cli will not need to re-hash and re-upload everything.
+**Recovery (resolved 2026-06-07):** Both containers were re-deployed from `synology-seaf-cli/docker-compose.yml` on edgesynology1 and are running again (the data volumes meant no full re-hash). HANDOFF.md and several docs still asserted "removed/DOWN" afterward — that staleness was corrected in this doc pass.
 
 **Rule added to prevent recurrence:** Do not trust "running/healthy" claims in docs — verify live container state with `docker ps -a` before asserting sync is up. Status claims in this file and HANDOFF.md must be re-derived from the host, not copied forward.
+
+### 2026-06-07 — SSO admin lost the panel: binding pointed at a duplicate account
+
+**What happened:** Admin could not see/reach the nas-settings panel after logging in with Microsoft SSO. Investigation found the single OAuth binding (`seahub_db.social_auth_usersocialauth`) mapped `albert@popcre.com` to a **non-admin duplicate** `@auth.local` account, leaving the real admin account (`4cba…`) with no SSO binding. Earlier logins had created several non-admin duplicates.
+
+**Impact:** SSO logins landed on a non-admin account, so the admin-only panel + sidebar link were (correctly) hidden — the panel looked "missing/undeployed" when it was live.
+
+**Root cause:** Account churn left the binding re-pointed to a duplicate; Microsoft *was* sending the `email` claim (it was the binding `uid`), so this was a binding problem, not a missing-claim problem.
+
+**Recovery:** Re-pointed the binding `albert@popcre.com → 4cba…` (the admin) and deleted the duplicate account(s) (each owned only an empty default library). Set `login_id=albert` + enabled a local break-glass password on the admin account so admin access no longer depends on SSO.
+
+**Rule added to prevent recurrence:** For admin work, prefer the local admin login (`u2giants@gmail.com`, or break-glass `albert`) — don't depend on SSO landing on the right account. If a duplicate `@auth.local` account appears, fix the binding rather than promoting the duplicate. The deeper `sub`-based OAuth remap (so SSO can never key on `email`) is optional Pending Work.
+
+### 2026-06-07 — nas-settings panel inaccessible (wrong internal URL)
+
+**What happened:** Every admin hitting `/nas-settings/` was redirected to the Seafile Files page. Root cause: `SEAFILE_INTERNAL_URL=http://seafile:8000`, but Seafile 13's Seahub binds `127.0.0.1:8000` (unreachable from other containers), so the admin-session check silently failed.
+
+**Impact:** Panel unusable for everyone (looked like an auth bug).
+
+**Recovery:** Changed `SEAFILE_INTERNAL_URL` to `http://seafile` (nginx :80, which proxies to Seahub). See Idiosyncratic Decisions.
+
+**Rule added to prevent recurrence:** Reach Seahub via the container's nginx (`:80`), not gunicorn's localhost `:8000`.
 
 ---
 
@@ -493,18 +591,16 @@ The org-wide CI/CD rules assume a deployment platform (Coolify) that GitHub Acti
 
 | Status | Item | Next action |
 |--------|------|-------------|
+| 🟡 in progress | **Pick up the pause/resume fix on the NAS** | Recreate both seaf-cli containers on edgesynology1 with the latest image (pause fix is in `d3fc09f`, image published). Steps in `synology-seaf-cli/README.md` / HANDOFF.md. Then verify Pause/Resume in the panel. |
 | 🟡 open | **Designer user accounts (8 people)** | Send `https://seafile.designflow.app`; they sign in with M365 SSO (accounts auto-create); then share Character Licensed + Generic Decor with each at Read/Write |
-| 🟡 open | **Windows workstation cutover** (optional, replaces NAS sync) | (1) confirm Docker Desktop on the Windows machine, (2) run `setup.ps1` as Admin, (3) verify containers healthy, (4) ensure NAS containers are not also running. See `windows-workstation/README.md` |
-| 🟢 optional | **Pin the seaf-cli base image to a digest** for fully reproducible builds | Replace `FROM flrnnc/seafile-client:latest` with a digest; document the bump procedure (see Idiosyncratic Decisions) |
+| 🟢 optional | **Set break-glass password on the `albert` admin account** | Albert: System Admin → Users → `4cba…@auth.local` → Reset Password; test `albert` + password at `/accounts/login/` (login_id already set) |
+| 🟢 optional | **OAuth `sub`-based remap** so SSO can never key on `email` | Only if SSO duplicate accounts recur after onboarding; change `OAUTH_ATTRIBUTE_MAP` primary to `sub` + migrate bindings. Not needed today (binding fixed) |
+| 🟢 optional | **Persistent NAS deploy path** instead of `/tmp` | Move `seaf-cli-compose.yml` + `.env` to e.g. `/volume1/docker/seaf-cli/` so recreates survive reboots without re-staging |
+| 🟢 optional | **Windows workstation cutover** (replaces NAS sync) | (1) confirm Docker Desktop, (2) run `setup.ps1` as Admin, (3) verify healthy, (4) ensure NAS containers are not also running. See `windows-workstation/README.md` |
+| 🟢 optional | **Pin the seaf-cli base image to a digest** for fully reproducible builds | Replace `FROM flrnnc/seafile-client:latest` with a digest; document the bump procedure |
 | 🟢 optional | **Elasticsearch** for full-text search | Not blocking; needs RAM headroom. `vm.max_map_count` already set |
-| ⚪ later | **Delete HANDOFF.md** | Once NAS sync is restored and designers are onboarded |
 
-### Done this session (2026-06-05)
-- seaf-cli staging rewritten to hardlink + `os.scandir` (no per-file copy; ~half the hourly scan I/O) — commit `5274587`
-- CI: immutable `sha-<commit>` image tags, `concurrency` cancel-in-progress, gha layer cache + buildx — commits `1c9fd18`, `546e0d4`
-- CI actions bumped to Node 24 majors (checkout v6, setup-python v6, buildx v4, login v4, build-push v7) — commit `84fa5d6`
-- §25 CI/CD exception documented; docs brought in line with actual state
-
-### Done this session (2026-06-06)
-- Pause/Resume added to sync status dashboard — commit `21c4a70`
-- NAS container status corrected (both were running; docs said removed)
+### Done in recent sessions
+- **2026-06-07/08:** Full seaf-cli control GUI in the nas-settings panel (Dashboard/Controls/Config/Libraries) over a UUID-routed poll+command-queue bridge; nas-settings moved to CI build+publish; fixed admin check (nginx :80), pause/resume (per-repo `auto-sync`), and the SSO binding/duplicate-account issue; added main-app sidebar link; tests (`test_app.py`, `test_entrypoint.py`) wired into CI.
+- **2026-06-06:** Pause/Resume added to the status dashboard; NAS container status corrected.
+- **2026-06-05:** seaf-cli staging rewritten to hardlink + `os.scandir`; CI immutable `sha-` tags + cache + buildx; §25 CI/CD exception documented.

@@ -19,7 +19,7 @@ Persistent memory path: `/home/ai/.claude/projects/-/memory/`
 ## Branch & deployment model
 
 - **`main` only.** Commit straight to `main` — no feature branches, no PRs.
-- **CI publishes; it does not deploy.** `.github/workflows/seaf-cli-image.yml` lints, builds, and pushes the seaf-cli image to GHCR. Deployment is a separate manual, repo-driven pull on the target host.
+- **CI publishes; it does not deploy.** `.github/workflows/seaf-cli-image.yml` and `nas-settings-image.yml` lint, test, build, and push their images to GHCR. Deployment is a separate manual, repo-driven pull on the target host.
 - **SSH is NOT the normal deployment path.** GitHub Actions must never SSH into the VPS/NAS or run Docker there. Claude runs *on* the VPS and may run host commands for manual ops/debugging, but production behavior must always be defined by repo files + the published image — never by server-only changes. See AGENTS.md → Deployment (§25 exception).
 - GitHub Secrets hold no deploy/SSH keys — CI uses only `GITHUB_TOKEN`.
 

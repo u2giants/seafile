@@ -195,8 +195,10 @@ If renewal fails: verify DNS still resolves correctly and port 80 is reachable (
 
 ## Remaining Work
 
-### Restore NAS sync — the seaf-cli containers were removed (2026-06-05)
-As of 2026-06-05 both NAS seaf-cli containers are **gone** from edgesynology1 (removed, not stopped — `docker ps -a` lists neither). Sync is down. The data/staging volumes and the image survive, so re-deploying `synology-seaf-cli/docker-compose.yml` restores sync without a full re-hash. See AGENTS.md → Critical Incident Log. Decide between restoring on the NAS or doing the Windows cutover below — never run both.
+> Live state and the authoritative pending list are in `AGENTS.md` → Pending Work (and `HANDOFF.md` while present). As of 2026-06-07 both NAS seaf-cli containers are running and sync is up; the 2026-06-05 "containers removed" incident is resolved (see AGENTS.md → Critical Incident Log).
+
+### Pick up the pause/resume fix on the NAS
+The pause/resume fix is in the published image but the running containers predate it — recreate them on edgesynology1 (see `synology-seaf-cli/README.md` / HANDOFF.md). `/tmp` is wiped on reboot, so `/tmp/seaf-cli-compose.yml` + `/tmp/.env` usually need re-staging first.
 
 ### Windows workstation cutover (optional)
 `windows-workstation/setup.ps1` is ready. Run it on the Windows rendering machine to move the seaf-cli upload work off the NAS. See Windows workstation deployment above. Only one host may run seaf-cli at a time.
