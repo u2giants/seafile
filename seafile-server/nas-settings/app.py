@@ -230,17 +230,23 @@ def save_results(data: dict) -> None:
 
 
 def is_seafile_admin() -> bool:
-    """Return True if the current request carries a valid Seafile admin session."""
-    sessionid = request.cookies.get("sessionid", "")
-    if not sessionid:
+    """Return True if the request has a valid Seafile admin session.
+
+    Uses the seahub_auth cookie (format: email@token) for Token auth over HTTPS.
+    The session-cookie approach (sessionid + http://seafile) triggers a 308
+    HTTP→HTTPS redirect that drops the Cookie header, causing spurious 403s.
+    """
+    seahub_auth = request.cookies.get("seahub_auth", "")
+    if not seahub_auth or "@" not in seahub_auth:
+        return False
+    # seahub_auth = "user@example.com@<40-char-hex-token>" — split on last @
+    token = seahub_auth.rsplit("@", 1)[-1]
+    if not token:
         return False
     try:
         req = urllib.request.Request(
-            _SEAFILE_ADMIN_API,
-            headers={
-                "Cookie": f"sessionid={sessionid}",
-                "Host": _SEAFILE_PUBLIC_HOST,
-            },
+            f"https://{_SEAFILE_PUBLIC_HOST}/api/v2.1/admin/sysinfo/",
+            headers={"Authorization": f"Token {token}"},
         )
         with urllib.request.urlopen(req, timeout=5) as resp:
             return resp.status == 200
