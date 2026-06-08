@@ -118,19 +118,24 @@ To release a change to `Dockerfile`, `entrypoint.py`, or `seaf-entrypoint.py`:
 
 1. Commit to `main` — GitHub Actions builds and pushes two tags: `ghcr.io/u2giants/seafile:seaf-cli-latest` (mutable pointer) and `ghcr.io/u2giants/seafile:sha-<commit>` (immutable, for audit + rollback)
 2. Wait for CI to pass: https://github.com/u2giants/seafile/actions
-3. Pull the new image on edgesynology1 and recreate containers via NAS MCP:
+3. Pull + recreate the containers on edgesynology1.
+
+> **Important:** the `nas-direct` MCP is **read-only** — it cannot run `docker pull`/`compose up`/`--force-recreate` (those are blocked even base64-encoded). Do the recreate **over SSH on edgesynology1**. Docker's full path is `/var/packages/ContainerManager/target/usr/bin/docker`, and `/tmp` is wiped on reboot so the compose + `.env` usually need re-staging first.
+
+Self-contained recreate block (paste over SSH on **edgesynology1**; reads creds from the running container, so no secrets are typed). If `/tmp/seaf-cli-compose.yml` is missing, write this repo's `synology-seaf-cli/docker-compose.yml` to it first:
 
 ```bash
-# docker pull ghcr.io/u2giants/seafile:seaf-cli-latest
-CMD="docker pull ghcr.io/u2giants/seafile:seaf-cli-latest"
-echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
-
-# docker compose -f /tmp/seaf-cli-compose.yml up -d --force-recreate
-CMD="docker compose -f /tmp/seaf-cli-compose.yml up -d --force-recreate"
-echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
+DOCKER=/var/packages/ContainerManager/target/usr/bin/docker
+# Rebuild /tmp/.env from the running container's baked-in credentials (nothing typed)
+sudo $DOCKER inspect seaf-cli-char-licensed \
+  --format '{{range .Config.Env}}{{println .}}{{end}}' \
+  | grep -E '^(SEAF_USERNAME|SEAF_PASSWORD|SEAF_STATUS_TOKEN)=' | sudo tee /tmp/.env >/dev/null
+# (stage /tmp/seaf-cli-compose.yml from this repo's synology-seaf-cli/docker-compose.yml if absent)
+sudo $DOCKER pull ghcr.io/u2giants/seafile:seaf-cli-latest
+sudo $DOCKER compose -f /tmp/seaf-cli-compose.yml --env-file /tmp/.env up -d --force-recreate
 ```
 
-`docker-compose.yml` changes (environment, volumes) only need step 3 — no image rebuild required. Write the updated compose file to `/tmp/seaf-cli-compose.yml` on the NAS first.
+`docker-compose.yml` changes (environment, volumes) only need the compose-up step — no image rebuild required.
 
 ### Rollback
 
