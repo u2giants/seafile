@@ -6,13 +6,17 @@ services:
     image: ghcr.io/u2giants/seafile:nas-settings-latest
     container_name: nas-settings
     restart: unless-stopped
+    env_file:
+      - /opt/seafile/.env
     volumes:
       - nas-settings-data:/data
     environment:
       - SECRET_KEY=${NAS_SETTINGS_SECRET_KEY}
       - STATUS_TOKEN=${NAS_STATUS_TOKEN}
-      # Reach Seahub via the seafile container's nginx on :80. Seahub's gunicorn
-      # binds 127.0.0.1:8000 (not reachable from other containers), so :8000 is refused.
+      # SEAFILE_INTERNAL_URL intentionally uses http:// — the internal nginx on :80
+      # is only used if session-based auth is needed; the admin auth check now uses
+      # the seahub_auth Token cookie over HTTPS instead (avoids 308 HTTP→HTTPS redirect
+      # that drops the Cookie header and causes spurious 403s).
       - SEAFILE_INTERNAL_URL=http://seafile
       - SEAFILE_PUBLIC_HOST=seafile.designflow.app
     labels:
