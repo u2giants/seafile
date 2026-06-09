@@ -290,6 +290,7 @@
       {% set lid = lib.id %}
       {% set current_days = settings.get(lid, {}).get('ingest_days', 730) %}
       {% set schedule = settings.get(lid, {}).get('schedule', default_schedule) %}
+      {% set schedule_windows_data = schedule.get('windows', default_schedule.get('windows', {})) %}
 
       {# Determine which preset is active #}
       {% if current_days is none %}
@@ -340,38 +341,35 @@
             Only allow sync during these times
           </label>
 
+          {% for window_key, window_label, window_days, default_start, default_end in schedule_windows %}
+          {% set window = schedule_windows_data.get(window_key, {}) %}
           <div class="field-row">
             <div class="field-group">
-              <label>Allowed days</label>
-              <div class="day-row">
-                {% for day_value, day_label in days %}
-                <label class="day-pill">
-                  <input type="checkbox"
-                         name="schedule_days_{{ lid }}"
-                         value="{{ day_value }}"
-                         {% if day_value in schedule.get('days', []) %}checked{% endif %} />
-                  {{ day_label }}
-                </label>
-                {% endfor %}
-              </div>
+              <label class="toggle-label">
+                <input type="checkbox"
+                       name="schedule_{{ window_key }}_enabled_{{ lid }}"
+                       {% if window.get('enabled') %}checked{% endif %} />
+                {{ window_label }}
+              </label>
+            </div>
+            <div class="field-group">
+              <label for="schedule_{{ window_key }}_start_{{ lid }}">Start</label>
+              <input type="time"
+                     id="schedule_{{ window_key }}_start_{{ lid }}"
+                     name="schedule_{{ window_key }}_start_{{ lid }}"
+                     value="{{ window.get('start', default_start) }}" />
+            </div>
+            <div class="field-group">
+              <label for="schedule_{{ window_key }}_end_{{ lid }}">End</label>
+              <input type="time"
+                     id="schedule_{{ window_key }}_end_{{ lid }}"
+                     name="schedule_{{ window_key }}_end_{{ lid }}"
+                     value="{{ window.get('end', default_end) }}" />
             </div>
           </div>
+          {% endfor %}
 
           <div class="field-row">
-            <div class="field-group">
-              <label for="schedule_start_{{ lid }}">Start</label>
-              <input type="time"
-                     id="schedule_start_{{ lid }}"
-                     name="schedule_start_{{ lid }}"
-                     value="{{ schedule.get('start', '19:00') }}" />
-            </div>
-            <div class="field-group">
-              <label for="schedule_end_{{ lid }}">End</label>
-              <input type="time"
-                     id="schedule_end_{{ lid }}"
-                     name="schedule_end_{{ lid }}"
-                     value="{{ schedule.get('end', '07:00') }}" />
-            </div>
             <div class="field-group">
               <label for="schedule_timezone_{{ lid }}">Timezone</label>
               <input type="text"

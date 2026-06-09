@@ -51,13 +51,13 @@ cd /opt/seafile && docker compose \
 
 ## seaf-cli Containers
 
-The seaf-cli containers use `ghcr.io/u2giants/seafile:seaf-cli-latest`. They can run on the NAS or on the Windows workstation — see `seafile-server/docs/architecture.md` for the comparison. Both deployments use the same image and the same `docker-compose.yml` structure; only the source volume type differs.
+The seaf-cli containers use `ghcr.io/u2giants/seafile:seaf-cli-latest`. They can run on the NAS or on the Windows workstation — see `docs/architecture.md` for the comparison. Both deployments use the same image and the same `docker-compose.yml` structure; only the source volume type differs.
 
 Currently running on: **NAS (edgesynology1)**.
 
 ### NAS deployment
 
-Managed via the NAS MCP (not SSH). All docker commands must be base64-encoded — see AGENTS.md.
+NAS deploys/recreates are done by an operator over SSH on `edgesynology1`. Docker is not in PATH on Synology; use `/var/packages/ContainerManager/target/usr/bin/docker`. The NAS MCP is useful for read-only diagnosis only; it cannot run `docker pull`, `compose up`, `start`, or `--force-recreate`.
 
 ### Release a code change to seaf-cli
 
@@ -65,16 +65,19 @@ When `synology-seaf-cli/Dockerfile`, `entrypoint.py`, or `seaf-entrypoint.py` ch
 
 1. Commit to `main` — GitHub Actions builds and pushes the wrapper image automatically
 2. Wait for CI: https://github.com/u2giants/seafile/actions (workflow: `seaf-cli image`)
-3. Pull and recreate on edgesynology1 via NAS MCP:
+3. Pull and recreate on `edgesynology1` over SSH:
 
 ```bash
-# docker pull ghcr.io/u2giants/seafile:seaf-cli-latest
-CMD="docker pull ghcr.io/u2giants/seafile:seaf-cli-latest"
-echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
+DOCKER=/var/packages/ContainerManager/target/usr/bin/docker
 
-# docker compose -f /tmp/seaf-cli-compose.yml up -d --force-recreate
-CMD="/var/packages/ContainerManager/target/usr/bin/docker compose -f /tmp/seaf-cli-compose.yml up -d --force-recreate"
-echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
+# Rebuild /tmp/.env from a running container's env if needed; this avoids typing secrets.
+sudo $DOCKER inspect seaf-cli-char-licensed \
+  --format '{{range .Config.Env}}{{println .}}{{end}}' \
+  | grep -E '^(SEAF_USERNAME|SEAF_PASSWORD|SEAF_STATUS_TOKEN)=' | sudo tee /tmp/.env >/dev/null
+
+# If /tmp/seaf-cli-compose.yml is missing, stage synology-seaf-cli/docker-compose.yml there first.
+sudo $DOCKER pull ghcr.io/u2giants/seafile:seaf-cli-latest
+sudo $DOCKER compose -f /tmp/seaf-cli-compose.yml --env-file /tmp/.env up -d --force-recreate
 ```
 
 ### Release a compose-only change
@@ -82,11 +85,11 @@ echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
 When only `synology-seaf-cli/docker-compose.yml` changes (environment, volumes — no image rebuild needed):
 
 1. Commit to `main` and push
-2. Write the updated compose file to `/tmp/seaf-cli-compose.yml` on edgesynology1 via NAS MCP (base64+tee)
-3. Recreate containers:
+2. Write the updated compose file to `/tmp/seaf-cli-compose.yml` on `edgesynology1`
+3. Recreate containers over SSH:
 ```bash
-CMD="/var/packages/ContainerManager/target/usr/bin/docker compose -f /tmp/seaf-cli-compose.yml up -d"
-echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
+DOCKER=/var/packages/ContainerManager/target/usr/bin/docker
+sudo $DOCKER compose -f /tmp/seaf-cli-compose.yml --env-file /tmp/.env up -d
 ```
 
 ### Windows workstation deployment
@@ -102,10 +105,10 @@ Prerequisites on the Windows machine: WSL2 enabled, Docker Desktop installed wit
 
 **Cutover procedure (switching from NAS to Windows):**
 1. Run `setup.ps1` on the Windows machine and verify `docker ps` shows both containers healthy
-2. Stop the NAS containers via NAS MCP:
+2. Stop the NAS containers over SSH on `edgesynology1`:
 ```bash
-CMD="/var/packages/ContainerManager/target/usr/bin/docker compose -f /tmp/seaf-cli-compose.yml stop"
-echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
+DOCKER=/var/packages/ContainerManager/target/usr/bin/docker
+sudo $DOCKER compose -f /tmp/seaf-cli-compose.yml --env-file /tmp/.env stop
 ```
 
 **Machine replacement:** Copy the `windows-workstation/` folder to the new machine, run `setup.ps1`. Sync state rebuilds from scratch (seaf-daemon re-hashes all files on first start — expect 200-300% CPU for several hours).
@@ -195,10 +198,10 @@ If renewal fails: verify DNS still resolves correctly and port 80 is reachable (
 
 ## Remaining Work
 
-> Live state and the authoritative pending list are in `AGENTS.md` → Pending Work (and `HANDOFF.md` while present). As of 2026-06-07 both NAS seaf-cli containers are running and sync is up; the 2026-06-05 "containers removed" incident is resolved (see AGENTS.md → Critical Incident Log).
+> Live state and the authoritative pending list are in `AGENTS.md` → Pending work (and `HANDOFF.md` while present). As of 2026-06-09 both NAS seaf-cli containers are reporting heartbeats to `nas-settings`, but the NAS-side containers still need a recreate to pick up the newest image features.
 
-### Pick up the pause/resume fix on the NAS
-The pause/resume fix is in the published image but the running containers predate it — recreate them on edgesynology1 (see `synology-seaf-cli/README.md` / HANDOFF.md). `/tmp` is wiped on reboot, so `/tmp/seaf-cli-compose.yml` + `/tmp/.env` usually need re-staging first.
+### Pick up the latest NAS-agent image
+The latest published image includes schedule enforcement and cached folder-size reporting. If the running status payload lacks fields such as `folder_size_cache`, recreate the containers on `edgesynology1` (see `synology-seaf-cli/README.md` / `HANDOFF.md`). `/tmp` is wiped on reboot, so `/tmp/seaf-cli-compose.yml` + `/tmp/.env` usually need re-staging first.
 
 ### Windows workstation cutover (optional)
 `windows-workstation/setup.ps1` is ready. Run it on the Windows rendering machine to move the seaf-cli upload work off the NAS. See Windows workstation deployment above. Only one host may run seaf-cli at a time.

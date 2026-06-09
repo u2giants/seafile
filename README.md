@@ -13,12 +13,7 @@ seafile-server/               Linode VPS — live at seafile.designflow.app
 ├── nas-settings.yml          Docker Compose: NAS sync settings web panel
 ├── .env.example              Environment variable template (never commit .env)
 ├── nas-settings/             Flask app — seaf-cli control panel (status/controls/config/libraries) + ingest window
-├── custom-templates/         Seahub template overrides ("NAS Sync" sidebar links: sysadmin + main app)
-└── docs/
-    ├── architecture.md       System design, containers, data flow, storage
-    ├── configuration.md      All env vars, config files, and their meanings
-    ├── deployment.md         Start/stop, updates, backup, DNS, NAS image releases
-    └── development.md        Logs, debugging, API usage, user management
+└── custom-templates/         Seahub template overrides (Microsoft login button + NAS Sync sidebar links)
 
 synology-seaf-cli/            NYC Synology NAS — running on edgesynology1
 ├── Dockerfile                Wrapper image built on flrnnc/seafile-client
@@ -36,6 +31,12 @@ windows-workstation/          Windows rendering machine — seaf-cli + PopDAM ag
 .github/workflows/
 ├── seaf-cli-image.yml        Lint + test + build + push seaf-cli wrapper image to GHCR
 └── nas-settings-image.yml    Lint + test + build + push nas-settings panel image to GHCR
+
+docs/
+├── architecture.md           System design, containers, data flow, storage
+├── configuration.md          All env vars, config files, and their meanings
+├── deployment.md             Start/stop, updates, backup, DNS, NAS image releases
+└── development.md            Logs, debugging, API usage, user management
 ```
 
 ## Live System
@@ -44,13 +45,13 @@ windows-workstation/          Windows rendering machine — seaf-cli + PopDAM ag
 |---|---|
 | URL | https://seafile.designflow.app |
 | Server | Linode VPS · 172.233.14.233 · Ubuntu 24.04 · Seafile Pro `13.0-latest` |
-| Admin | `albert@popcre.com` via M365 SSO; local fallbacks `u2giants@gmail.com` and break-glass `albert` |
+| Admin | `albert@popcre.com` via M365 SSO; internal Seafile username `4cba3f5721f7436fbe06a2b154ee296a@auth.local` |
 | Images (GHCR) | `:seaf-cli-latest` and `:nas-settings-latest` (+ immutable `:sha-<commit>` / `:nas-settings-sha-<commit>` per build) |
 | Branch model | `main` only — no branches, no PRs |
 | Credentials | `/opt/seafile/CREDENTIALS.txt` on the VPS (root-only, never in this repo) |
 | GitHub | https://github.com/u2giants/seafile |
 
-> **Current status (verified 2026-06-07):** VPS server and both NAS seaf-cli containers are **running**; NAS → S3 sync is up. The site has not gone live (designers not yet onboarded). See `AGENTS.md` → Pending Work / Critical Incident Log.
+> **Current status (verified 2026-06-09):** VPS server, `nas-settings`, and both NAS seaf-cli containers are reporting heartbeats. The Synology containers still need a recreate to pick up the newest NAS-agent image features such as cached folder-size reporting. See `AGENTS.md` → Pending work.
 
 ## AI Sessions
 

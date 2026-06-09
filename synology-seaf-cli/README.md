@@ -25,6 +25,7 @@ Each container runs a two-stage entrypoint:
 
 **Stage 1 — `seaf-entrypoint.py`** (baked into the wrapper image at `/home/seafile/seaf-entrypoint.py`):
 - Filters files from `/source` by mtime (`SEAF_INGEST_DAYS`) using a single `os.scandir` pass (mtime read from the directory entry — no extra `stat()` per file)
+- Skips Synology metadata folders named `@eaDir` by default so thumbnails and extended-attribute data are not uploaded to Seafile (`SEAF_IGNORE_DIRS` can override this)
 - Hardlinks qualifying files into `/library` (staging volume), falling back to a copy only if `/source` and `/library` are on different filesystems; removes stale ones. Hardlinks share the source inode, so the working set is not physically duplicated on the NAS
 - Fetches per-library `ingest_days` from the nas-settings API; falls back to `SEAF_INGEST_DAYS` env var on failure
 - Starts a daemon thread that re-runs the above every hour
@@ -70,7 +71,7 @@ When seaf-daemon dies:
 - The process exited with code 0, preventing Docker's restart policy from firing
 - The health check always reported healthy regardless of sync state
 
-See `seafile-server/docs/architecture.md` → "Process Supervision" for the full explanation. The upstream issues have been reported at [gitlab.com/flrnnc-oss/docker-seafile-client](https://gitlab.com/flrnnc-oss/docker-seafile-client).
+See `docs/architecture.md` → "Process Supervision" for the full explanation. The upstream issues have been reported at [gitlab.com/flrnnc-oss/docker-seafile-client](https://gitlab.com/flrnnc-oss/docker-seafile-client).
 
 ## Check sync status
 
@@ -105,7 +106,7 @@ echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
 
 ## Ingest window settings
 
-The per-library ingest window (how far back files are synced) is configurable at:
+The per-library ingest window (how far back files are synced) and weekday/weekend sync schedule are configurable at:
 ```
 https://seafile.designflow.app/sys/  → NAS Sync Settings (bottom of left nav)
 ```

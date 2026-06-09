@@ -19,8 +19,8 @@ and the container via SEAF_LIBRARY) — not by the container's ephemeral Docker
 hostname.
 
 Auth: delegates to Seafile admin session. Any request that carries a valid
-Seafile sessionid cookie belonging to a system admin is allowed in. No
-separate login required — the user's existing Seafile session is reused.
+Seafile `seahub_auth` cookie for a system admin is allowed in. No separate
+login required — the user's existing Seafile session is reused.
 
 Env vars:
   SEAFILE_INTERNAL_URL  Base URL for Seafile's internal API (default: http://seafile — the
@@ -72,10 +72,31 @@ COMMANDS_PATH = Path("/data/commands.json")
 DEFAULT_INGEST_DAYS = 730
 DEFAULT_SCHEDULE = {
     "enabled": False,
+    "timezone": "America/New_York",
+    "windows": {
+        "weekdays": {
+            "enabled": True,
+            "days": [0, 1, 2, 3, 4],
+            "start": "19:00",
+            "end": "07:00",
+        },
+        "weekends": {
+            "enabled": False,
+            "days": [5, 6],
+            "start": "09:00",
+            "end": "17:00",
+        },
+    },
+}
+SCHEDULE_WINDOWS = [
+    ("weekdays", "Weekdays", [0, 1, 2, 3, 4], "19:00", "07:00"),
+    ("weekends", "Weekends", [5, 6], "09:00", "17:00"),
+]
+LEGACY_WINDOW_DEFAULT = {
+    "enabled": True,
     "days": [0, 1, 2, 3, 4],
     "start": "19:00",
     "end": "07:00",
-    "timezone": "America/New_York",
 }
 STATUS_STALE_SECONDS = 120  # containers reporting older than this are shown as offline
 
@@ -184,7 +205,9 @@ def load_settings() -> dict:
                     data.setdefault(lid, {"uuid": lib["uuid"]})
                     data[lid].setdefault("uuid", lib["uuid"])
                     data[lid].setdefault("ingest_days", DEFAULT_INGEST_DAYS)
-                    data[lid].setdefault("schedule", DEFAULT_SCHEDULE.copy())
+                    data[lid]["schedule"] = normalize_schedule(
+                        data[lid].get("schedule")
+                    )
                 return data
         except (json.JSONDecodeError, OSError):
             pass
@@ -192,7 +215,7 @@ def load_settings() -> dict:
         lib["id"]: {
             "ingest_days": DEFAULT_INGEST_DAYS,
             "uuid": lib["uuid"],
-            "schedule": DEFAULT_SCHEDULE.copy(),
+            "schedule": normalize_schedule(None),
         }
         for lib in LIBRARIES
     }
@@ -204,39 +227,96 @@ def save_settings(data: dict) -> None:
         json.dump(data, f, indent=2)
 
 
-def _parse_schedule(form, lid: str) -> dict:
-    days = []
-    for raw in form.getlist(f"schedule_days_{lid}"):
-        try:
-            day = int(raw)
-        except ValueError:
-            continue
-        if 0 <= day <= 6:
-            days.append(day)
+def _clean_time(value: str, fallback: str) -> str:
+    parts = value.split(":")
+    if len(parts) != 2:
+        return fallback
+    try:
+        hour, minute = int(parts[0]), int(parts[1])
+    except ValueError:
+        return fallback
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return fallback
+    return f"{hour:02d}:{minute:02d}"
 
+
+def normalize_schedule(schedule: dict | None) -> dict:
+    base = {
+        "enabled": DEFAULT_SCHEDULE["enabled"],
+        "timezone": DEFAULT_SCHEDULE["timezone"],
+        "windows": {
+            key: value.copy()
+            for key, value in DEFAULT_SCHEDULE["windows"].items()
+        },
+    }
+    if not isinstance(schedule, dict):
+        return base
+
+    base["enabled"] = bool(schedule.get("enabled"))
+    base["timezone"] = (
+        schedule.get("timezone") or DEFAULT_SCHEDULE["timezone"]
+    ).strip()
+
+    if isinstance(schedule.get("windows"), dict):
+        for key, _label, default_days, default_start, default_end in SCHEDULE_WINDOWS:
+            raw = schedule["windows"].get(key, {})
+            days = raw.get("days", default_days) if isinstance(raw, dict) else default_days
+            base["windows"][key] = {
+                "enabled": bool(raw.get("enabled")) if isinstance(raw, dict) else False,
+                "days": sorted({
+                    day for day in days
+                    if isinstance(day, int) and 0 <= day <= 6
+                }) or default_days,
+                "start": _clean_time(
+                    str(raw.get("start", default_start)) if isinstance(raw, dict) else "",
+                    default_start,
+                ),
+                "end": _clean_time(
+                    str(raw.get("end", default_end)) if isinstance(raw, dict) else "",
+                    default_end,
+                ),
+            }
+        return base
+
+    # Legacy schedule shape: one {days,start,end} window.
+    days = schedule.get("days", LEGACY_WINDOW_DEFAULT["days"])
+    base["windows"]["weekdays"] = {
+        "enabled": True,
+        "days": sorted({
+            day for day in days
+            if isinstance(day, int) and 0 <= day <= 6
+        }) or LEGACY_WINDOW_DEFAULT["days"],
+        "start": _clean_time(str(schedule.get("start", "19:00")), "19:00"),
+        "end": _clean_time(str(schedule.get("end", "07:00")), "07:00"),
+    }
+    base["windows"]["weekends"] = {
+        **base["windows"]["weekends"],
+        "enabled": False,
+    }
+    return base
+
+
+def _parse_schedule(form, lid: str) -> dict:
     def clean_time(name: str, fallback: str) -> str:
-        value = form.get(name, fallback).strip()
-        parts = value.split(":")
-        if len(parts) != 2:
-            return fallback
-        try:
-            hour, minute = int(parts[0]), int(parts[1])
-        except ValueError:
-            return fallback
-        if not (0 <= hour <= 23 and 0 <= minute <= 59):
-            return fallback
-        return f"{hour:02d}:{minute:02d}"
+        return _clean_time(form.get(name, fallback).strip(), fallback)
 
     timezone = form.get(f"schedule_timezone_{lid}", DEFAULT_SCHEDULE["timezone"]).strip()
     if not timezone:
         timezone = DEFAULT_SCHEDULE["timezone"]
 
+    windows = {}
+    for key, _label, days, start, end in SCHEDULE_WINDOWS:
+        windows[key] = {
+            "enabled": form.get(f"schedule_{key}_enabled_{lid}") == "on",
+            "days": days,
+            "start": clean_time(f"schedule_{key}_start_{lid}", start),
+            "end": clean_time(f"schedule_{key}_end_{lid}", end),
+        }
+
     return {
         "enabled": form.get(f"schedule_enabled_{lid}") == "on",
-        "days": sorted(set(days)),
-        "start": clean_time(f"schedule_start_{lid}", DEFAULT_SCHEDULE["start"]),
-        "end": clean_time(f"schedule_end_{lid}", DEFAULT_SCHEDULE["end"]),
         "timezone": timezone,
+        "windows": windows,
     }
 
 
@@ -382,6 +462,7 @@ def index():
         preset_values=PRESET_VALUES,
         days=DAYS,
         default_schedule=DEFAULT_SCHEDULE,
+        schedule_windows=SCHEDULE_WINDOWS,
         saved=saved,
         active_tab="settings",
     )
@@ -466,7 +547,7 @@ def api_status_post():
     lib = LIB_BY_UUID.get(uuid)
     schedule = None
     if lib:
-        schedule = load_settings().get(lib["id"], {}).get("schedule", DEFAULT_SCHEDULE.copy())
+        schedule = normalize_schedule(load_settings().get(lib["id"], {}).get("schedule"))
 
     return jsonify({
         "ok": True,
@@ -560,7 +641,7 @@ def api_settings():
         result[lid] = {
             "ingest_days": entry.get("ingest_days", DEFAULT_INGEST_DAYS),
             "uuid": lib["uuid"],
-            "schedule": entry.get("schedule", DEFAULT_SCHEDULE.copy()),
+            "schedule": normalize_schedule(entry.get("schedule")),
         }
     return jsonify(result)
 

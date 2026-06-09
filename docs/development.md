@@ -143,17 +143,17 @@ docker exec seaf-cli-char-licensed python3 /home/seafile/entrypoint.py --healthc
 
 **Login fails with correct password** — Check `seahub_settings.py` for syntax errors (duplicate OAuth blocks, bad indentation). Run syntax check above. `docker restart seafile` after any fix.
 
-**M365 SSO "Error, please contact administrator"** — Check `seahub.log` for the exact error. Most likely cause: `OAUTH_ATTRIBUTE_MAP` has `'id': (True, 'sub')` — the `id` key must be `(False, 'sub')` (optional) since Microsoft's OIDC endpoint returns `sub` but not `id`. See [configuration.md](configuration.md) for the correct value.
+**M365 SSO "Error, please contact administrator"** — Check `seahub.log` for the exact error. Verify `seahub_settings.py` matches `docs/configuration.md`, including the tenant-specific Microsoft URLs and `OAUTH_ATTRIBUTE_MAP`.
 
 **TLS certificate error** — DNS not resolved yet, or Let's Encrypt couldn't reach port 80. Check `docker logs seafile-caddy`.
 
 **Container keeps restarting** — `docker logs seafile 2>&1 | tail -30` — look at the lines immediately before each restart.
 
-**nas-settings redirects to login unexpectedly** — The panel calls `GET http://seafile:8000/api/v2.1/admin/sysinfo/` with the browser's `sessionid` cookie on every request to verify admin status. If that internal call fails (Seafile container down, network issue, non-admin session), access is denied. Check that the `seafile` container is healthy and the request carries a valid admin session cookie.
+**nas-settings redirects to login unexpectedly** — The panel reads the browser's `seahub_auth` cookie and calls Seafile's admin sysinfo API using token auth. If that call fails (Seafile container down, network issue, non-admin token), access is denied. Check that the `seafile` container is healthy and the browser session belongs to an active system admin.
 
 ## Seafile API
 
-Get a local-password token (use `albert@popcre.com` — `u2giants@gmail.com` may be SSO-only after first login):
+Get a local-password token if a local password is configured for the admin account:
 
 ```bash
 TOKEN=$(curl -s \

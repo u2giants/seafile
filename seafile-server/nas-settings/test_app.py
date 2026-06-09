@@ -93,11 +93,38 @@ check("resume still pending in queue",
       any(c.get("verb") == "resume" for c in entry.get("pending_commands", [])))
 
 print("== /api/settings (container poll) unchanged ==")
+client.post("/", data={
+    "preset_seaf-cli-char-licensed": "365",
+    "schedule_enabled_seaf-cli-char-licensed": "on",
+    "schedule_weekdays_enabled_seaf-cli-char-licensed": "on",
+    "schedule_weekdays_start_seaf-cli-char-licensed": "18:30",
+    "schedule_weekdays_end_seaf-cli-char-licensed": "06:45",
+    "schedule_weekends_enabled_seaf-cli-char-licensed": "on",
+    "schedule_weekends_start_seaf-cli-char-licensed": "10:00",
+    "schedule_weekends_end_seaf-cli-char-licensed": "16:00",
+    "schedule_timezone_seaf-cli-char-licensed": "America/New_York",
+    "preset_seaf-cli-generic-decor": "730",
+    "schedule_timezone_seaf-cli-generic-decor": "America/New_York",
+}, base_url=BASE)
 r = client.get("/api/settings")
 check("/api/settings returns lib uuid",
       r.status_code == 200 and r.get_json().get("seaf-cli-char-licensed", {}).get("uuid") == CHAR)
 check("/api/settings returns schedule",
       isinstance(r.get_json().get("seaf-cli-char-licensed", {}).get("schedule"), dict))
+schedule = r.get_json()["seaf-cli-char-licensed"]["schedule"]
+check("/api/settings returns weekday/weekend windows",
+      schedule["windows"]["weekdays"]["start"] == "18:30"
+      and schedule["windows"]["weekends"]["end"] == "16:00")
+legacy = nas.normalize_schedule({
+    "enabled": True,
+    "days": [0, 1, 2, 3, 4],
+    "start": "20:00",
+    "end": "06:00",
+    "timezone": "America/New_York",
+})
+check("legacy schedule normalizes to windows",
+      legacy["windows"]["weekdays"]["start"] == "20:00"
+      and legacy["windows"]["weekends"]["enabled"] is False)
 
 print(f"\n{sum(PASS)}/{len(PASS)} checks passed")
 sys.exit(0 if all(PASS) else 1)

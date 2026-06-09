@@ -75,7 +75,7 @@ Seahub session cache. No persistence configured — acceptable for a cache. Rest
 ### nas-settings
 Image: `ghcr.io/u2giants/seafile:nas-settings-latest` (CI-built + published from `seafile-server/nas-settings/`)
 
-Flask app that gives the Seafile web UI a GUI for the seaf-cli client at `/nas-settings/`: a live status Dashboard plus Controls (pause/resume/restart/stop), Config (any `seaf-cli config` key), Libraries (list/list-remote/create/desync), and the ingest-window Settings. Auth delegates to Seafile: the app calls Seafile's internal admin API on every request to verify the `sessionid` cookie belongs to a system admin — no separate credentials. Persists state to a named Docker volume (`nas-settings-data`). Managed by `nas-settings.yml`, deployed separately from the main stack (not in `COMPOSE_FILE`).
+Flask app that gives the Seafile web UI a GUI for the seaf-cli client at `/nas-settings/`: a live status Dashboard plus Controls (pause/resume/restart/stop), Config (any `seaf-cli config` key), Libraries (list/list-remote/create/desync plus cached NAS folder sizes), and ingest-window/sync-schedule Settings. Auth delegates to Seafile: the app reads the browser's `seahub_auth` cookie and calls Seafile's admin API with token auth to verify the user is a system admin — no separate credentials. Persists state to a named Docker volume (`nas-settings-data`). Managed by `nas-settings.yml`, deployed separately from the main stack (not in `COMPOSE_FILE`).
 
 **Control loop (server → NAS).** The VPS cannot reach the NAS, so it never pushes. Each seaf-cli container's status reporter POSTs to `/api/status` every 30 s (authenticated by `SEAF_STATUS_TOKEN`); the panel persists the report and hands back the next queued command in the response. The container executes it (daemon RPC for pause/resume, otherwise `seaf-cli`) and reports the result on its next POST. Commands are routed by **library UUID**, not the container's ephemeral hostname. Destructive verbs (desync/create/reinit) require explicit confirmation.
 
@@ -92,6 +92,7 @@ Each container follows this flow on startup and hourly:
     │
     ▼ seaf-entrypoint.py
     │  – selects files by mtime (SEAF_INGEST_DAYS) in one os.scandir pass
+    │  – skips Synology metadata directories such as @eaDir by default
     │  – hardlinks qualifying files into /library staging volume
     │    (copy2 fallback only if /source and /library are on different filesystems)
     │  – removes stale files from /library
@@ -103,11 +104,12 @@ Each container follows this flow on startup and hourly:
     │  – starts seaf-daemon
     │  – syncs /library to Seafile server via seaf-cli
     │  – watchdog loop: exits code 1 if seaf-daemon dies
+    │  – reports live status and can enforce sync schedules / scan cached folder sizes
     ▼
 Seafile → S3
 ```
 
-`seaf-entrypoint.py` reads per-library `ingest_days` from `https://seafile.designflow.app/nas-settings/api/settings` on startup and on each hourly refresh; falls back to `SEAF_INGEST_DAYS` from the environment if the fetch fails.
+`seaf-entrypoint.py` reads per-library `ingest_days` from `https://seafile.designflow.app/nas-settings/api/settings` on startup and on each hourly refresh; falls back to `SEAF_INGEST_DAYS` from the environment if the fetch fails. `entrypoint.py` receives the current sync schedule on the 30-second status heartbeat, toggles each repo's `auto-sync` property, and can build a cached recursive folder-size table nightly after 2 AM New York time or on command.
 
 ### Deployment options
 
@@ -201,7 +203,7 @@ Two methods work simultaneously:
 
 **Microsoft 365 SSO (primary — for all staff):**
 ```
-Login page → "Single Sign-On" button → Microsoft login →
+Login page → "Sign in with Microsoft" button → Microsoft login →
 callback to /oauth/callback/ → Seafile maps by email → session
 ```
 Tenant-locked to POP Creations (tenant ID `1caeb1c0-a087-4cb9-b046-a5e22404f971`). Only users in this M365 tenant can authenticate. Self-registration is disabled (`ENABLE_SIGNUP = False`). Azure AD app: "Seafile POP Creations" (client ID `8d9da03c-e5cd-4a23-b987-32aaaed31fe7`).
@@ -210,7 +212,7 @@ Tenant-locked to POP Creations (tenant ID `1caeb1c0-a087-4cb9-b046-a5e22404f971`
 ```
 Login page → email + password form → seahub_db lookup → session
 ```
-`albert@popcre.com` and `u2giants@gmail.com` have local passwords in CREDENTIALS.txt. Use these if SSO is unavailable. `nas-sync@popcre.com` is local-only (machine account, no SSO).
+The current admin is the SSO-created internal user `4cba3f5721f7436fbe06a2b154ee296a@auth.local` with contact email `albert@popcre.com`. `nas-sync@popcre.com` is local-only (machine account, no SSO).
 
 ## Elasticsearch (not deployed)
 

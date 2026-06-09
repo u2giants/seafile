@@ -71,7 +71,7 @@ REDIS_PASSWORD=                      # Empty — Redis is not exposed outside Do
 ### Init-only (first container start only — ignored thereafter)
 
 ```
-INIT_SEAFILE_ADMIN_EMAIL=u2giants@gmail.com
+INIT_SEAFILE_ADMIN_EMAIL=<initial admin email; init-only, not necessarily a current active user>
 INIT_SEAFILE_ADMIN_PASSWORD=<password>
 INIT_SEAFILE_MYSQL_ROOT_PASSWORD=<password>
 ```
@@ -91,6 +91,7 @@ ENABLE_FACE_RECOGNITION=false
 
 ```
 NAS_SETTINGS_SECRET_KEY=<random string>    # Flask session signing key
+NAS_STATUS_TOKEN=<random string>           # shared with seaf-cli containers for status POST auth
 ```
 
 Used by the `nas-settings` container. `SEAFILE_INTERNAL_URL` and `SEAFILE_PUBLIC_HOST` are hardcoded in `nas-settings.yml` (not sourced from `.env`) because they are deployment-invariant for this installation.
@@ -112,24 +113,23 @@ OAUTH_ENABLE_INSECURE_TRANSPORT = False
 OAUTH_CLIENT_ID = '<see CREDENTIALS.txt on VPS>'
 OAUTH_CLIENT_SECRET = '<see CREDENTIALS.txt on VPS>'
 OAUTH_REDIRECT_URL = 'https://seafile.designflow.app/oauth/callback/'
-OAUTH_PROVIDER_DOMAIN = 'login.microsoftonline.com'
-OAUTH_AUTHORIZATION_URL = 'https://login.microsoftonline.com/1caeb1c0-.../oauth2/v2.0/authorize'
-OAUTH_TOKEN_URL = 'https://login.microsoftonline.com/1caeb1c0-.../oauth2/v2.0/token'
+OAUTH_PROVIDER_DOMAIN = 'designflow.app'
+TENANT = '1caeb1c0-a087-4cb9-b046-a5e22404f971'
+OAUTH_AUTHORIZATION_URL = f'https://login.microsoftonline.com/{TENANT}/oauth2/v2.0/authorize'
+OAUTH_TOKEN_URL = f'https://login.microsoftonline.com/{TENANT}/oauth2/v2.0/token'
 OAUTH_USER_INFO_URL = 'https://graph.microsoft.com/oidc/userinfo'
-OAUTH_SCOPE = ['openid', 'email', 'profile']
+OAUTH_SCOPE = ['openid', 'profile', 'email']
 OAUTH_ATTRIBUTE_MAP = {
-    'id': (False, 'sub'),   # Microsoft's OIDC endpoint returns 'sub', not 'id' — must be optional
-    'name': (False, 'name'),
-    'email': (True, 'email'),
+    'sub':   (True,  'uid'),
+    'email': (False, 'contact_email'),
+    'name':  (False, 'name'),
 }
 ENABLE_SIGNUP = False
 ```
 
-**`'id': (False, 'sub')` is intentional.** Microsoft's Graph OIDC userinfo endpoint (`/oidc/userinfo`) returns `sub` but not `id`. Marking `id` as required (`True`) causes "Error, please contact administrator" on every login. Marking it optional allows the flow to fall through to the `email` field, which is how accounts are matched. Do not change this back to `True`.
+The tenant-specific authorization/token URLs (with the tenant ID rather than `/common/`) mean only POP Creations M365 users can authenticate. `ENABLE_SIGNUP = False` prevents local open signup.
 
-The tenant-specific authorization/token URLs (with the tenant ID rather than `/common/`) mean only POP Creations M365 users can authenticate. `ENABLE_SIGNUP = False` prevents account creation outside SSO.
-
-**Admin fallback login:** `albert@popcre.com` has a local Seafile password (in CREDENTIALS.txt) and can log in via the email/password form even if SSO is unavailable.
+**Current admin identity:** the active admin is the SSO-created internal user `4cba3f5721f7436fbe06a2b154ee296a@auth.local` with contact email `albert@popcre.com`.
 
 ---
 
@@ -234,11 +234,6 @@ To change credentials: delete `C:\ProgramData\seaf-cli\.env` and re-run `setup.p
 
 ## Docker Registry Credentials
 
-Seafile's private registry (`docker.seadrive.org`) — needed to pull `latest` or future versions:
+This deployment currently uses Docker Hub image `seafileltd/seafile-pro-mc:13.0-latest`, not `docker.seadrive.org`, for the Seafile server.
 
-```
-Username: seafile
-Password: zjkmid6rQibdZ=uJMuWS
-```
-
-These are Seafile's published public credentials. They may rotate — check https://customer.seafile.com/downloads/ if login fails.
+If a future upgrade requires Seafile's private registry, obtain current registry instructions from Seafile's official customer/download portal and keep credential values out of this repo.

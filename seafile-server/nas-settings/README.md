@@ -2,7 +2,7 @@
 
 Flask web app that gives the Seafile server's web UI a **GUI for the seaf-cli client**
 running on the NAS — everything seaf-cli can do via the command line, surfaced as
-admin controls. It also keeps the original ingest-window settings.
+admin controls. It also keeps the original ingest-window and sync-schedule settings.
 
 Accessible at `https://seafile.designflow.app/nas-settings/` via a link in the Seafile
 System Admin sidebar.
@@ -15,7 +15,7 @@ System Admin sidebar.
 | **Controls** | `start` / `stop` / auto-sync | Pause, resume, restart daemon, stop daemon. |
 | **Config** | `config -k [-v]` | Get/set any daemon config key (upload/download limits, TLS verify, …) plus a free-form key/value. |
 | **Libraries** | `list`, `list-remote`, `create`, `desync` | Local libraries + desync; list server libraries; create a server library; show cached NAS folder sizes. |
-| **Ingest Window** | — | The original per-library ingest-day window. |
+| **Ingest Window** | — | Per-library ingest-day window plus weekday/weekend sync schedules. |
 
 ### Safety tiers
 - **Read / Safe** (status, list, config get/set, pause/resume/restart/stop) apply directly.
@@ -51,6 +51,7 @@ not the container's ephemeral Docker hostname. Admin actions in the browser call
 | seaf-daemon watchdog | 10 s | Container exits if the daemon PID disappears, letting Docker restart it. |
 | Docker healthcheck | 60 s | Runs the image healthcheck with 10 s timeout and 3 retries. |
 | Ingest-window refresh | 1 h | Rebuilds the staged `/library` view and re-reads `/api/settings`. |
+| Sync schedule check | 30 s | The status heartbeat receives the current schedule and enables/disables per-repo `auto-sync`; weekday and weekend windows can differ. |
 | Folder-size cache refresh | Nightly after 2 AM New York time | The NAS agent walks `/source` in the background and reports cached recursive sizes; the Libraries page never calculates folder sizes live. |
 
 ## Tests
@@ -63,12 +64,12 @@ cd seafile-server/nas-settings
 pip install flask && python test_app.py
 ```
 
-Run in CI by `.github/workflows/nas-settings-test.yml`. The NAS-side dispatcher has its own
-stubbed test at `synology-seaf-cli/test_entrypoint.py`.
+Run in CI by `.github/workflows/nas-settings-image.yml`. The NAS-side dispatcher has its own
+stubbed test in `.github/workflows/seaf-cli-image.yml` via `synology-seaf-cli/test_entrypoint.py`.
 
 ## Auth
 
-No separate login. On every request the app reads the browser's `sessionid` cookie (set by Seafile) and calls `GET http://seafile/api/v2.1/admin/sysinfo/` internally to verify it belongs to a Seafile system admin. Non-admins and unauthenticated users are redirected to the Seafile login with `next=/nas-settings/`.
+No separate login. On every request the app reads the browser's `seahub_auth` cookie (set by Seafile) and calls Seafile's admin sysinfo API with token auth to verify it belongs to a Seafile system admin. Non-admins and unauthenticated users are redirected to the Seafile login with `next=/nas-settings/`.
 
 The `seafile` service name resolves because both containers are on `seafile-net`.
 

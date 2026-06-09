@@ -8,6 +8,7 @@ import os
 import sys
 import tempfile
 import types
+import importlib.util
 from pathlib import Path
 
 # Stub the 'seafile' C module so entrypoint.py imports without the daemon libs.
@@ -83,9 +84,32 @@ check("disabled schedule allows sync",
       c._schedule_allows_sync({"enabled": False}) is True)
 check("empty-day schedule blocks sync",
       c._schedule_allows_sync({"enabled": True, "days": [], "start": "00:00", "end": "23:59", "timezone": "UTC"}) is False)
+check("all disabled schedule windows block sync",
+      c._schedule_allows_sync({"enabled": True, "timezone": "UTC", "windows": {
+          "weekdays": {"enabled": False, "days": [0, 1, 2, 3, 4], "start": "00:00", "end": "23:59"},
+          "weekends": {"enabled": False, "days": [5, 6], "start": "00:00", "end": "23:59"},
+      }}) is False)
 c._apply_schedule({"enabled": True, "days": [], "start": "00:00", "end": "23:59", "timezone": "UTC"})
 check("schedule disables repo auto-sync",
       c.rpc.props[("repo1", "auto-sync")] == "false")
+
+spec = importlib.util.spec_from_file_location(
+    "seaf_entrypoint", Path(__file__).with_name("seaf-entrypoint.py")
+)
+seaf_entrypoint = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(seaf_entrypoint)
+src = Path(tempfile.mkdtemp())
+library = Path(tempfile.mkdtemp())
+(src / "@eaDir").mkdir()
+(src / "@eaDir" / "thumb.jpg").write_bytes(b"thumb")
+(src / "visible.txt").write_bytes(b"visible")
+seaf_entrypoint.SOURCE = src
+seaf_entrypoint.LIBRARY = library
+wanted = seaf_entrypoint.scan_source(None)
+check("@eaDir is ignored by default",
+      Path("visible.txt") in wanted and Path("@eaDir/thumb.jpg") not in wanted)
+check("SEAF_IGNORE_DIRS can override ignored dirs",
+      Path("@eaDir/thumb.jpg") in seaf_entrypoint.scan_source(None, ignored_dirs=set()))
 
 scanner = ep.Client.__new__(ep.Client)
 scanner.source = Path(tempfile.mkdtemp())

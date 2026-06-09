@@ -590,10 +590,6 @@ class Client:
                 pass
         now = datetime.datetime.now(tz)
 
-        days = set(schedule.get("days") or [])
-        if not days:
-            return False
-
         def minutes(value: str, fallback: str) -> int:
             try:
                 hour, minute = value.split(":", 1)
@@ -602,17 +598,40 @@ class Client:
                 hour, minute = fallback.split(":", 1)
                 return int(hour) * 60 + int(minute)
 
-        start = minutes(schedule.get("start", "00:00"), "00:00")
-        end = minutes(schedule.get("end", "23:59"), "23:59")
         current = now.hour * 60 + now.minute
         today = now.weekday()
         yesterday = (today - 1) % 7
 
-        if start == end:
-            return today in days
-        if start < end:
-            return today in days and start <= current < end
-        return (today in days and current >= start) or (yesterday in days and current < end)
+        def window_allows(window: dict) -> bool:
+            if window.get("enabled") is False:
+                return False
+            days = set(window.get("days") or [])
+            if not days:
+                return False
+            start = minutes(window.get("start", "00:00"), "00:00")
+            end = minutes(window.get("end", "23:59"), "23:59")
+            if start == end:
+                return today in days
+            if start < end:
+                return today in days and start <= current < end
+            return (today in days and current >= start) or (yesterday in days and current < end)
+
+        windows = schedule.get("windows")
+        if isinstance(windows, dict):
+            return any(
+                window_allows(window)
+                for window in windows.values()
+                if isinstance(window, dict)
+            )
+
+        # Backward compatibility for schedules saved before weekday/weekend
+        # windows were split.
+        return window_allows({
+            "enabled": True,
+            "days": schedule.get("days") or [],
+            "start": schedule.get("start", "00:00"),
+            "end": schedule.get("end", "23:59"),
+        })
 
     def _apply_schedule(self, schedule: dict | None) -> None:
         if not hasattr(self, "rpc"):

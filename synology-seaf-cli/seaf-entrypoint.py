@@ -19,6 +19,10 @@ entrypoint at /home/seafile/entrypoint.py.
                      app fetches per-library ingest_days keyed by SEAF_LIBRARY
                      UUID at startup and on every hourly refresh. On fetch
                      failure it falls back silently to SEAF_INGEST_DAYS.
+
+  SEAF_IGNORE_DIRS   Optional comma-separated directory names to omit from the
+                     staged library. Defaults to @eaDir so Synology metadata
+                     folders are not uploaded to Seafile.
 """
 import datetime
 import json
@@ -41,6 +45,7 @@ log = logging.getLogger('seaf-entrypoint')
 SOURCE = Path('/source')
 LIBRARY = Path('/library')
 UPSTREAM = '/home/seafile/entrypoint.py'
+DEFAULT_IGNORE_DIRS = {"@eaDir"}
 
 
 def fetch_ingest_days_from_url(settings_url: str, library_uuid: str, fallback) -> object:
@@ -104,7 +109,14 @@ def _place(src, dst, use_links):
     shutil.copy2(src, dst)
 
 
-def scan_source(days):
+def _ignored_dir_names():
+    raw = os.environ.get("SEAF_IGNORE_DIRS")
+    if raw is None:
+        return DEFAULT_IGNORE_DIRS
+    return {name.strip() for name in raw.split(",") if name.strip()}
+
+
+def scan_source(days, ignored_dirs=None):
     """Return {relpath: mtime} for source files modified within `days` days.
 
     Uses os.scandir so each file's mtime comes from the directory read itself
@@ -112,6 +124,7 @@ def scan_source(days):
     I/O of the hourly rescan over large trees (Character Licensed ≈ 467k files).
     """
     cutoff = time.time() - days * 86400 if days else 0
+    ignored_dirs = DEFAULT_IGNORE_DIRS if ignored_dirs is None else set(ignored_dirs)
     wanted = {}
     stack = [SOURCE]
     while stack:
@@ -124,6 +137,8 @@ def scan_source(days):
             for entry in scanner:
                 try:
                     if entry.is_dir(follow_symlinks=False):
+                        if entry.name in ignored_dirs:
+                            continue
                         stack.append(Path(entry.path))
                     elif entry.is_file(follow_symlinks=False):
                         mtime = entry.stat(follow_symlinks=False).st_mtime
@@ -134,14 +149,20 @@ def scan_source(days):
     return wanted
 
 
-def populate(days=None):
+def populate(days=None, ignored_dirs=None):
     """Mirror the in-window subset of /source into /library.
 
     /library is staged via hardlinks (falling back to copies) so the working
     set is never physically duplicated on the NAS. seaf-cli then syncs /library.
     """
-    wanted = scan_source(days)
-    log.info('Ingest window: %s days — %d qualifying files', days or 'all', len(wanted))
+    ignored_dirs = _ignored_dir_names() if ignored_dirs is None else set(ignored_dirs)
+    wanted = scan_source(days, ignored_dirs)
+    log.info(
+        'Ingest window: %s days — %d qualifying files; ignored dirs: %s',
+        days or 'all',
+        len(wanted),
+        ', '.join(sorted(ignored_dirs)) or 'none',
+    )
 
     # Remove entries from library that are no longer wanted
     for root, _dirs, files in os.walk(LIBRARY, topdown=False):
@@ -187,6 +208,7 @@ def populate(days=None):
             "source_path": str(SOURCE),
             "source_label": os.environ.get("SEAF_SOURCE_PATH", str(SOURCE)),
             "staging_path": str(LIBRARY),
+            "ignored_dirs": sorted(ignored_dirs),
             "last_ingest_at": datetime.datetime.utcnow().isoformat() + "Z",
         }))
     except OSError:
