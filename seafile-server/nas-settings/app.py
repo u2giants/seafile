@@ -118,6 +118,7 @@ MAX_RESULTS_PER_LIB = 25  # keep only the most recent command results per librar
 
 READ_VERBS = {"list", "list_remote", "config_get"}        # read-only queries
 SAFE_VERBS = {"pause", "resume", "restart", "stop", "config_set"}  # reversible
+SAFE_VERBS |= {"refresh_folder_sizes"}
 GUARDED_VERBS = {"desync", "create", "reinit"}            # require typed confirm
 ALL_VERBS = READ_VERBS | SAFE_VERBS | GUARDED_VERBS
 

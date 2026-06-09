@@ -6,6 +6,7 @@ Run:  python test_entrypoint.py
 """
 import os
 import sys
+import tempfile
 import types
 from pathlib import Path
 
@@ -27,6 +28,9 @@ c.url = "https://seafile.designflow.app"; c.username = "nas@pop"
 c.ini = Path("/home/seafile/.ccnet/seafile.ini")
 c.socket = Path("/seafile/seafile-data/seafile.sock")
 c.seafile = Path("/seafile")
+c.source = Path(tempfile.mkdtemp())
+c.folder_size_cache_path = Path(tempfile.mkdtemp()) / "folder-size-cache.json"
+c._folder_size_scan_running = False
 
 calls = []
 def fake_run(args, timeout=120):
@@ -62,6 +66,9 @@ check("list -> seaf-cli list", disp("list")["ok"] and calls == [["list"]])
 r = disp("list_remote")
 check("list_remote includes creds",
       r["ok"] and calls[0][0] == "list-remote" and "-s" in calls[0] and "-u" in calls[0])
+c._refresh_folder_size_cache_async = lambda force=False: calls.append(["refresh_folder_sizes", force])
+check("refresh_folder_sizes starts scanner",
+      disp("refresh_folder_sizes")["ok"] and calls == [["refresh_folder_sizes", True]])
 check("desync -> desync -d", disp("desync", {"worktree": "/library"})["ok"]
       and calls == [["desync", "-d", "/library"]])
 r = disp("desync", {}); check("desync without worktree errors", not r["ok"] and "worktree" in r["error"])
@@ -79,6 +86,19 @@ check("empty-day schedule blocks sync",
 c._apply_schedule({"enabled": True, "days": [], "start": "00:00", "end": "23:59", "timezone": "UTC"})
 check("schedule disables repo auto-sync",
       c.rpc.props[("repo1", "auto-sync")] == "false")
+
+scanner = ep.Client.__new__(ep.Client)
+scanner.source = Path(tempfile.mkdtemp())
+scanner.seafile = Path(tempfile.mkdtemp())
+scanner.folder_size_cache_path = scanner.seafile / "folder-size-cache.json"
+(scanner.source / "A").mkdir()
+(scanner.source / "A" / "one.bin").write_bytes(b"abc")
+(scanner.source / "two.bin").write_bytes(b"12345")
+cache = ep.Client._build_folder_size_cache(scanner)
+check("folder-size cache totals bytes",
+      cache["root"]["bytes"] == 8 and cache["root"]["files"] == 2)
+check("folder-size cache includes child folder",
+      any(x["name"] == "A" and x["bytes"] == 3 for x in cache["children"]))
 
 # Credential redaction in real _run_seaf output.
 import subprocess  # noqa: E402

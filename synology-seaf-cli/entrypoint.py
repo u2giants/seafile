@@ -26,6 +26,8 @@ DAEMON_START_TIMEOUT = 60  # seconds to wait for socket after seaf-cli start
 INIT_TIMEOUT = 30          # seconds to wait for .ini after seaf-cli init
 WATCHDOG_INTERVAL_SECONDS = 10
 STATUS_REPORT_INTERVAL_SECONDS = 30
+FOLDER_SIZE_SCAN_HOUR = 2
+FOLDER_SIZE_SCAN_TZ = "America/New_York"
 
 # Well-known seaf-daemon config keys reported in the status snapshot so the
 # nas-settings Config page can show current values. Any key can still be
@@ -92,6 +94,10 @@ class Client:
         self.seafile = Path("/seafile")
         self.socket = self.seafile.joinpath("seafile-data", "seafile.sock")
         self.target = Path("/library")
+        self.source = Path("/source")
+        self.folder_size_cache_path = self.seafile / "folder-size-cache.json"
+        self._folder_size_scan_lock = threading.Lock()
+        self._folder_size_scan_running = False
 
         if self.socket.exists():
             self.rpc = seafile.RpcClient(str(self.socket))
@@ -373,6 +379,7 @@ class Client:
             "staging_path": ingest.get("staging_path"),
             "last_ingest_at": ingest.get("last_ingest_at"),
             "ingest_days": ingest.get("ingest_days"),
+            "folder_size_cache": self._load_folder_size_cache(),
         }
 
     def _run_seaf(self, args: list[str], timeout: int = 120) -> tuple[bool, str]:
@@ -398,6 +405,178 @@ class Client:
             ok, out = self._run_seaf(["config", "-k", key], timeout=10)
             cache[key] = out if (ok and out) else None
         self._config_cache = cache
+
+    def _load_folder_size_cache(self) -> dict | None:
+        try:
+            return json.loads(self.folder_size_cache_path.read_text())
+        except Exception:
+            return None
+
+    def _save_folder_size_cache(self, cache: dict) -> None:
+        self.folder_size_cache_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.folder_size_cache_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(cache, indent=2, sort_keys=True))
+        tmp.replace(self.folder_size_cache_path)
+
+    def _scan_tree_size(self, root: Path) -> dict:
+        total_bytes = 0
+        file_count = 0
+        folder_count = 0
+        errors = 0
+        stack = [root]
+        while stack:
+            current = stack.pop()
+            try:
+                with os.scandir(current) as entries:
+                    for entry in entries:
+                        try:
+                            if entry.is_dir(follow_symlinks=False):
+                                folder_count += 1
+                                stack.append(Path(entry.path))
+                            elif entry.is_file(follow_symlinks=False):
+                                file_count += 1
+                                total_bytes += entry.stat(follow_symlinks=False).st_size
+                        except OSError:
+                            errors += 1
+            except OSError:
+                errors += 1
+        return {
+            "bytes": total_bytes,
+            "files": file_count,
+            "folders": folder_count,
+            "errors": errors,
+        }
+
+    def _build_folder_size_cache(self) -> dict:
+        source = self.source
+        started_at = datetime.datetime.utcnow()
+        cache = {
+            "source_path": str(source),
+            "source_label": os.environ.get("SEAF_SOURCE_PATH", str(source)),
+            "started_at": started_at.isoformat() + "Z",
+            "finished_at": None,
+            "status": "running",
+            "root": {"bytes": 0, "files": 0, "folders": 0, "errors": 0},
+            "children": [],
+        }
+        self._save_folder_size_cache(cache)
+
+        children = []
+        if source.exists():
+            entries = []
+            try:
+                with os.scandir(source) as scan:
+                    for entry in scan:
+                        try:
+                            entries.append({
+                                "name": entry.name,
+                                "path": entry.path,
+                                "is_dir": entry.is_dir(follow_symlinks=False),
+                                "is_file": entry.is_file(follow_symlinks=False),
+                                "size": entry.stat(follow_symlinks=False).st_size
+                                if entry.is_file(follow_symlinks=False) else 0,
+                            })
+                        except OSError:
+                            entries.append({
+                                "name": entry.name,
+                                "path": entry.path,
+                                "is_dir": False,
+                                "is_file": False,
+                                "size": 0,
+                                "errors": 1,
+                            })
+                entries.sort(key=lambda e: e["name"].lower())
+            except OSError:
+                entries = []
+            for entry in entries:
+                item = {
+                    "name": entry["name"],
+                    "path": entry["path"],
+                    "type": "folder",
+                    "bytes": 0,
+                    "files": 0,
+                    "folders": 0,
+                    "errors": entry.get("errors", 0),
+                }
+                try:
+                    if entry["is_dir"]:
+                        item.update(self._scan_tree_size(Path(entry["path"])))
+                        item["type"] = "folder"
+                        item["folders"] += 1
+                    elif entry["is_file"]:
+                        item.update({"type": "file", "bytes": entry["size"], "files": 1})
+                    else:
+                        continue
+                except OSError:
+                    item["errors"] = 1
+                children.append(item)
+                for key in ("bytes", "files", "folders", "errors"):
+                    cache["root"][key] += item.get(key, 0)
+                cache["children"] = children
+                cache["updated_child"] = entry["name"]
+                self._save_folder_size_cache(cache)
+
+        cache["children"] = sorted(children, key=lambda x: (-x.get("bytes", 0), x.get("name", "").lower()))
+        cache["finished_at"] = datetime.datetime.utcnow().isoformat() + "Z"
+        cache["status"] = "complete"
+        cache.pop("updated_child", None)
+        self._save_folder_size_cache(cache)
+        return cache
+
+    def _refresh_folder_size_cache_async(self, force: bool = False) -> None:
+        if self._folder_size_scan_running:
+            return
+
+        def _worker() -> None:
+            with self._folder_size_scan_lock:
+                self._folder_size_scan_running = True
+                try:
+                    logger.info("Scanning cached folder sizes for %s", self.source)
+                    self._build_folder_size_cache()
+                    logger.info("Folder-size cache scan complete")
+                except Exception:
+                    logger.exception("Folder-size cache scan failed")
+                finally:
+                    self._folder_size_scan_running = False
+
+        cache = self._load_folder_size_cache()
+        if not force and cache and cache.get("status") == "complete":
+            return
+        self._folder_size_scan_running = True
+        threading.Thread(target=_worker, daemon=True, name="folder-size-scan").start()
+
+    def _start_folder_size_scheduler(self) -> None:
+        """Refresh recursive folder sizes once per night without blocking sync."""
+        def _local_now() -> datetime.datetime:
+            tz = datetime.timezone.utc
+            if ZoneInfo is not None:
+                try:
+                    tz = ZoneInfo(FOLDER_SIZE_SCAN_TZ)
+                except Exception:
+                    pass
+            return datetime.datetime.now(tz)
+
+        def _loop() -> None:
+            last_scan_date = None
+            cache = self._load_folder_size_cache()
+            finished_at = cache.get("finished_at") if cache else None
+            if finished_at:
+                try:
+                    last_scan_date = datetime.datetime.fromisoformat(
+                        finished_at.rstrip("Z")
+                    ).date()
+                except Exception:
+                    pass
+            while True:
+                now = _local_now()
+                if now.hour >= FOLDER_SIZE_SCAN_HOUR and last_scan_date != now.date():
+                    self._refresh_folder_size_cache_async(force=True)
+                    last_scan_date = now.date()
+                time.sleep(300)
+
+        threading.Thread(target=_loop, daemon=True, name="folder-size-scheduler").start()
+        logger.info("Folder-size scheduler started: daily after %02d:00 %s",
+                    FOLDER_SIZE_SCAN_HOUR, FOLDER_SIZE_SCAN_TZ)
 
     def _schedule_allows_sync(self, schedule: dict | None) -> bool:
         if not schedule or not schedule.get("enabled"):
@@ -517,6 +696,10 @@ class Client:
                 ok, out = self._run_seaf(
                     ["list-remote", *self._get_credential_args()], timeout=60)
                 result.update(ok=ok, output=out)
+
+            elif verb == "refresh_folder_sizes":
+                self._refresh_folder_size_cache_async(force=True)
+                result.update(ok=True, output="folder-size refresh started")
 
             elif verb == "desync":
                 worktree = args.get("worktree", "")
@@ -686,5 +869,6 @@ if __name__ == "__main__":
     status_token = get_configuration("SEAF_STATUS_TOKEN", None)
     if settings_url:
         client._start_status_reporter(settings_url, status_token)
+    client._start_folder_size_scheduler()
 
     client.watch()

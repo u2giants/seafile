@@ -22,6 +22,20 @@
       <tbody id="local-body-{{ lib.uuid }}"></tbody>
     </table>
     <div id="feedback-{{ lib.uuid }}"></div>
+
+    <div style="margin-top:18px;">
+      <div class="card-header" style="padding-bottom:8px;">
+        <h2 style="font-size:0.95rem;">Cached NAS folder sizes</h2>
+        <button class="btn btn-blue" onclick="refreshFolderSizes('{{ lib.uuid }}', this)">Refresh sizes</button>
+      </div>
+      <div id="size-summary-{{ lib.uuid }}" class="hint">Waiting for cached size data…</div>
+      <table class="data" style="margin-top:8px;">
+        <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Files</th><th>Folders</th></tr></thead>
+        <tbody id="size-body-{{ lib.uuid }}">
+          <tr><td colspan="5" class="hint">No cached folder sizes yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
   {% endfor %}
 
@@ -143,6 +157,69 @@ sudo $DOCKER compose -f /tmp/seaf-cli-compose.yml --env-file /tmp/.env up -d --f
     return null;
   }
 
+  function formatBytes(bytes) {
+    if (bytes === null || bytes === undefined || isNaN(bytes)) return "—";
+    const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+    let value = Number(bytes);
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value = value / 1024;
+      unit += 1;
+    }
+    return (unit === 0 ? value.toFixed(0) : value.toFixed(value >= 10 ? 1 : 2)) + " " + units[unit];
+  }
+
+  function formatCount(value) {
+    if (value === null || value === undefined || isNaN(value)) return "—";
+    return Number(value).toLocaleString();
+  }
+
+  function formatIso(value) {
+    if (!value) return "not scanned yet";
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return value;
+    return d.toLocaleString();
+  }
+
+  function escapeHtml(value) {
+    return String(value || "").replace(/[&<>"']/g, ch => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[ch]));
+  }
+
+  function renderFolderSizes(lib, entry) {
+    const summaryEl = document.getElementById("size-summary-" + lib.uuid);
+    const bodyEl = document.getElementById("size-body-" + lib.uuid);
+    const cache = entry && entry.folder_size_cache;
+    if (!cache) {
+      summaryEl.textContent = "No cached size scan has been reported yet.";
+      bodyEl.innerHTML = '<tr><td colspan="5" class="hint">No cached folder sizes yet.</td></tr>';
+      return;
+    }
+
+    const root = cache.root || {};
+    const status = cache.status === "running" ? "scan running" : "last scanned";
+    summaryEl.innerHTML =
+      '<b>Total:</b> ' + formatBytes(root.bytes) +
+      ' · <b>Files:</b> ' + formatCount(root.files) +
+      ' · <b>Folders:</b> ' + formatCount(root.folders) +
+      ' · <b>' + status + ':</b> ' + formatIso(cache.finished_at || cache.started_at) +
+      (root.errors ? ' · <b>Skipped:</b> ' + formatCount(root.errors) + ' unreadable item(s)' : '');
+
+    const children = (cache.children || []).slice(0, 200);
+    if (!children.length) {
+      bodyEl.innerHTML = '<tr><td colspan="5" class="hint">The scan found no children under the source folder.</td></tr>';
+      return;
+    }
+    bodyEl.innerHTML = children.map(item =>
+      '<tr><td>' + escapeHtml(item.name) + '</td>' +
+      '<td>' + escapeHtml(item.type || "folder") + '</td>' +
+      '<td>' + formatBytes(item.bytes) + '</td>' +
+      '<td>' + formatCount(item.files) + '</td>' +
+      '<td>' + formatCount(item.folders) + '</td></tr>'
+    ).join("");
+  }
+
   function render(lib, entry) {
     const stateEl = document.getElementById("state-" + lib.uuid);
     const bodyEl  = document.getElementById("local-body-" + lib.uuid);
@@ -151,6 +228,7 @@ sudo $DOCKER compose -f /tmp/seaf-cli-compose.yml --env-file /tmp/.env up -d --f
     if (!entry || entry.stale) {
       stateEl.innerHTML = '<div class="offline-note">Container offline.</div>';
       bodyEl.innerHTML = '<tr><td colspan="4" class="hint">No data.</td></tr>';
+      renderFolderSizes(lib, entry);
     } else {
       stateEl.innerHTML = '<span class="hint">Last seen ' + ago(entry.seconds_ago) + '</span>';
       const repos = entry.local_repos || [];
@@ -165,6 +243,7 @@ sudo $DOCKER compose -f /tmp/seaf-cli-compose.yml --env-file /tmp/.env up -d --f
             (r.name || "").replace(/'/g, "\\'") + '\',\'' + (r.worktree || "") + '\')">Desync</button></td></tr>'
         ).join("");
       }
+      renderFolderSizes(lib, entry);
     }
 
     const res = (entry && entry.recent_results || []).find(r => r.verb === "desync");
@@ -176,6 +255,20 @@ sudo $DOCKER compose -f /tmp/seaf-cli-compose.yml --env-file /tmp/.env up -d --f
         (res.ok ? "✓ " : "✗ ") + (res.output || res.error || "") + '</div>';
     } else {
       fbEl.innerHTML = "";
+    }
+  }
+
+  async function refreshFolderSizes(uuid, btn) {
+    const fb = document.getElementById("feedback-" + uuid);
+    btn.disabled = true;
+    try {
+      await queueCommand(uuid, "refresh_folder_sizes", {}, false);
+      fb.innerHTML = '<div class="pending-note">Folder-size refresh queued — the NAS will start it on the next heartbeat.</div>';
+      setTimeout(refresh, 1500);
+    } catch (e) {
+      fb.innerHTML = '<div class="result fail">Failed: ' + e.message + '</div>';
+    } finally {
+      btn.disabled = false;
     }
   }
 

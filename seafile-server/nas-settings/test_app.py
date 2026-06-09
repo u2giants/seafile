@@ -60,6 +60,9 @@ check("unknown library rejected (400)", r.status_code == 400)
 r = client.post("/api/command", json={"container_id": "seaf-cli-char-licensed", "command": "resume"})
 check("legacy container_id+command accepted", r.status_code == 200)
 
+r = client.post("/api/command", json={"library_uuid": CHAR, "verb": "refresh_folder_sizes"})
+check("folder-size refresh command accepted", r.status_code == 200 and r.get_json().get("ok"))
+
 print("== status POST: uuid routing, command handback, result persist ==")
 r = client.post("/api/status", json={"library_uuid": CHAR, "container_id": "abc123",
                                       "daemon_alive": True, "reported_at": "2026-06-07T00:00:00Z"},

@@ -14,7 +14,7 @@ System Admin sidebar.
 | **Dashboard** | `status` | Live per-library sync state, progress, errors, staging/ingest info; pause/resume. |
 | **Controls** | `start` / `stop` / auto-sync | Pause, resume, restart daemon, stop daemon. |
 | **Config** | `config -k [-v]` | Get/set any daemon config key (upload/download limits, TLS verify, …) plus a free-form key/value. |
-| **Libraries** | `list`, `list-remote`, `create`, `desync` | Local libraries + desync; list server libraries; create a server library. |
+| **Libraries** | `list`, `list-remote`, `create`, `desync` | Local libraries + desync; list server libraries; create a server library; show cached NAS folder sizes. |
 | **Ingest Window** | — | The original per-library ingest-day window. |
 
 ### Safety tiers
@@ -51,6 +51,7 @@ not the container's ephemeral Docker hostname. Admin actions in the browser call
 | seaf-daemon watchdog | 10 s | Container exits if the daemon PID disappears, letting Docker restart it. |
 | Docker healthcheck | 60 s | Runs the image healthcheck with 10 s timeout and 3 retries. |
 | Ingest-window refresh | 1 h | Rebuilds the staged `/library` view and re-reads `/api/settings`. |
+| Folder-size cache refresh | Nightly after 2 AM New York time | The NAS agent walks `/source` in the background and reports cached recursive sizes; the Libraries page never calculates folder sizes live. |
 
 ## Tests
 
@@ -92,6 +93,9 @@ The NAS seaf-cli containers poll this endpoint hourly to pick up ingest window c
 | `POST /api/status` | `X-Status-Token` | Containers report state + command results; response carries the next queued command. |
 | `GET /api/status-data` | admin session | Browser polls this: per-library status, staleness, pending commands, recent results. |
 | `POST /api/command` | admin session | Enqueue a command `{library_uuid, verb, args, confirm}`. |
+
+`refresh_folder_sizes` is a safe command that asks the NAS agent to rebuild its cached
+recursive folder-size table immediately. Otherwise the cache refreshes nightly.
 
 ## State
 
