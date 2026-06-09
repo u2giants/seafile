@@ -176,12 +176,17 @@ def populate(days=None):
         except OSError as e:
             log.warning('Skip %s: %s', rel, e)
 
-    log.info('Library ready — %d files staged via %s', placed,
-             'hardlink' if use_links else 'copy')
+    method = 'hardlink' if use_links else 'copy'
+    log.info('Library ready — %d files staged via %s', placed, method)
     try:
         Path('/tmp/ingest-status.json').write_text(json.dumps({
             "files": len(wanted),
+            "changed_files": placed,
             "ingest_days": days,
+            "method": method,
+            "source_path": str(SOURCE),
+            "source_label": os.environ.get("SEAF_SOURCE_PATH", str(SOURCE)),
+            "staging_path": str(LIBRARY),
             "last_ingest_at": datetime.datetime.utcnow().isoformat() + "Z",
         }))
     except OSError:

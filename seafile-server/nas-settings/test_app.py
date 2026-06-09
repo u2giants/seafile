@@ -68,6 +68,7 @@ body = r.get_json()
 check("status POST 200", r.status_code == 200)
 check("first queued command handed back is pause", body.get("command", {}).get("verb") == "pause")
 check("handed-back id matches", body.get("command", {}).get("id") == cmd_id)
+check("status response includes schedule", "schedule" in body)
 
 r = client.post("/api/status", json={"library_uuid": CHAR}, headers={"X-Status-Token": "bad"})
 check("bad status token rejected (401)", r.status_code == 401)
@@ -92,6 +93,8 @@ print("== /api/settings (container poll) unchanged ==")
 r = client.get("/api/settings")
 check("/api/settings returns lib uuid",
       r.status_code == 200 and r.get_json().get("seaf-cli-char-licensed", {}).get("uuid") == CHAR)
+check("/api/settings returns schedule",
+      isinstance(r.get_json().get("seaf-cli-char-licensed", {}).get("schedule"), dict))
 
 print(f"\n{sum(PASS)}/{len(PASS)} checks passed")
 sys.exit(0 if all(PASS) else 1)

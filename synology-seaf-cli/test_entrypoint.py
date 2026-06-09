@@ -72,6 +72,14 @@ check("restart stops daemon", disp("restart")["ok"] and calls == [["stop"]])
 check("reinit stops daemon", disp("reinit")["ok"] and ["stop"] in calls)
 r = disp("bogus"); check("unknown verb errors", not r["ok"] and "unknown verb" in r["error"])
 
+check("disabled schedule allows sync",
+      c._schedule_allows_sync({"enabled": False}) is True)
+check("empty-day schedule blocks sync",
+      c._schedule_allows_sync({"enabled": True, "days": [], "start": "00:00", "end": "23:59", "timezone": "UTC"}) is False)
+c._apply_schedule({"enabled": True, "days": [], "start": "00:00", "end": "23:59", "timezone": "UTC"})
+check("schedule disables repo auto-sync",
+      c.rpc.props[("repo1", "auto-sync")] == "false")
+
 # Credential redaction in real _run_seaf output.
 import subprocess  # noqa: E402
 class _P:

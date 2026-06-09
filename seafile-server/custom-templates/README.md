@@ -18,6 +18,10 @@ A verbatim copy of Seafile's built-in `react_app.html` (the main workspace app) 
 
 Same full-copy rationale and upgrade risk as above — re-diff against `/opt/seafile/seafile-pro-server-<version>/seahub/seahub/templates/react_app.html` after a Seafile upgrade. (Current upstream baseline: 13.0.21.)
 
+### `registration/login.html`
+
+A verbatim copy of Seafile's built-in login template with one visual change: the SSO button renders as a Microsoft-branded "Sign in with Microsoft" button. The existing `#sso` click handler and Seahub SSO/OAuth route are unchanged.
+
 **Validate before activating** (templates are cached, so a copy has no effect until Seahub reloads — and a syntax error would break the page for everyone once it does). Compile it in Seahub's own environment first:
 
 ```bash
@@ -36,6 +40,8 @@ Files in this directory must be manually copied to the VPS, then Seahub restarte
 DST=/opt/seafile-data/seafile/seahub-data/custom/templates
 sudo cp seafile-server/custom-templates/sysadmin/sysadmin_react_app.html "$DST/sysadmin/sysadmin_react_app.html"
 sudo cp seafile-server/custom-templates/react_app.html                   "$DST/react_app.html"
+sudo mkdir -p "$DST/registration"
+sudo cp seafile-server/custom-templates/registration/login.html          "$DST/registration/login.html"
 docker restart seafile   # ~30-90s full blip (web + sync). Validate the template first (above).
 ```
 

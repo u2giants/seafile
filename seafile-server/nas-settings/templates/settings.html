@@ -40,7 +40,7 @@
 
     main {
       flex: 1;
-      max-width: 720px;
+      max-width: 900px;
       width: 100%;
       margin: 0 auto;
       padding: 36px 16px 48px;
@@ -117,7 +117,7 @@
       color: #374151;
     }
 
-    select, input[type="number"] {
+    select, input[type="number"], input[type="time"], input[type="text"] {
       padding: 9px 12px;
       border: 1px solid #d1d5db;
       border-radius: 6px;
@@ -133,7 +133,7 @@
       cursor: pointer;
     }
 
-    select:focus, input[type="number"]:focus {
+    select:focus, input[type="number"]:focus, input[type="time"]:focus, input[type="text"]:focus {
       border-color: #1a2a4a;
       box-shadow: 0 0 0 3px rgba(26, 42, 74, 0.10);
     }
@@ -150,6 +150,53 @@
 
     input[type="number"] {
       width: 120px;
+    }
+
+    input[type="time"] {
+      width: 132px;
+    }
+
+    .section-title {
+      color: #1f2937;
+      font-size: 0.92rem;
+      font-weight: 700;
+      margin: 20px 0 12px;
+    }
+
+    .schedule-wrap {
+      border-top: 1px solid #eef0f3;
+      margin-top: 18px;
+      padding-top: 18px;
+    }
+
+    .toggle-label {
+      align-items: center;
+      color: #374151;
+      display: inline-flex;
+      font-size: 0.9rem;
+      font-weight: 600;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .day-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 4px 0 14px;
+    }
+
+    .day-pill {
+      align-items: center;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      color: #374151;
+      display: inline-flex;
+      font-size: 0.84rem;
+      font-weight: 600;
+      gap: 6px;
+      min-width: 68px;
+      padding: 7px 9px;
     }
 
     .hint {
@@ -228,8 +275,8 @@
       <a href="{{ url_for('index') }}"          class="nav-tab {% if active_tab == 'settings' %}active{% endif %}">Ingest Window</a>
     </nav>
 
-    <h1 class="page-heading">Ingest Window Settings</h1>
-    <p class="page-sub">Control how far back each library looks when syncing files from the NAS.</p>
+    <h1 class="page-heading">Ingest Window & Schedule</h1>
+    <p class="page-sub">Control which NAS files are eligible, and when each library is allowed to sync.</p>
 
     {% if saved %}
     <div class="banner-success">
@@ -242,6 +289,7 @@
       {% for lib in libraries %}
       {% set lid = lib.id %}
       {% set current_days = settings.get(lid, {}).get('ingest_days', 730) %}
+      {% set schedule = settings.get(lid, {}).get('schedule', default_schedule) %}
 
       {# Determine which preset is active #}
       {% if current_days is none %}
@@ -282,6 +330,59 @@
         </div>
 
         <p class="hint">Only files modified within this window are uploaded to Seafile.</p>
+
+        <div class="schedule-wrap">
+          <div class="section-title">Allowed Sync Schedule</div>
+          <label class="toggle-label">
+            <input type="checkbox"
+                   name="schedule_enabled_{{ lid }}"
+                   {% if schedule.get('enabled') %}checked{% endif %} />
+            Only allow sync during these times
+          </label>
+
+          <div class="field-row">
+            <div class="field-group">
+              <label>Allowed days</label>
+              <div class="day-row">
+                {% for day_value, day_label in days %}
+                <label class="day-pill">
+                  <input type="checkbox"
+                         name="schedule_days_{{ lid }}"
+                         value="{{ day_value }}"
+                         {% if day_value in schedule.get('days', []) %}checked{% endif %} />
+                  {{ day_label }}
+                </label>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+
+          <div class="field-row">
+            <div class="field-group">
+              <label for="schedule_start_{{ lid }}">Start</label>
+              <input type="time"
+                     id="schedule_start_{{ lid }}"
+                     name="schedule_start_{{ lid }}"
+                     value="{{ schedule.get('start', '19:00') }}" />
+            </div>
+            <div class="field-group">
+              <label for="schedule_end_{{ lid }}">End</label>
+              <input type="time"
+                     id="schedule_end_{{ lid }}"
+                     name="schedule_end_{{ lid }}"
+                     value="{{ schedule.get('end', '07:00') }}" />
+            </div>
+            <div class="field-group">
+              <label for="schedule_timezone_{{ lid }}">Timezone</label>
+              <input type="text"
+                     id="schedule_timezone_{{ lid }}"
+                     name="schedule_timezone_{{ lid }}"
+                     value="{{ schedule.get('timezone', 'America/New_York') }}" />
+            </div>
+          </div>
+
+          <p class="hint">If the end time is earlier than the start time, the window runs overnight.</p>
+        </div>
       </div>
       {% endfor %}
 

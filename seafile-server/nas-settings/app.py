@@ -70,6 +70,13 @@ SETTINGS_PATH = Path("/data/settings.json")
 STATUS_PATH = Path("/data/status.json")
 COMMANDS_PATH = Path("/data/commands.json")
 DEFAULT_INGEST_DAYS = 730
+DEFAULT_SCHEDULE = {
+    "enabled": False,
+    "days": [0, 1, 2, 3, 4],
+    "start": "19:00",
+    "end": "07:00",
+    "timezone": "America/New_York",
+}
 STATUS_STALE_SECONDS = 120  # containers reporting older than this are shown as offline
 
 PRESET_OPTIONS = [
@@ -83,6 +90,15 @@ PRESET_OPTIONS = [
 ]
 
 PRESET_VALUES = {opt[0] for opt in PRESET_OPTIONS if opt[0] not in ("", "custom")}
+DAYS = [
+    (0, "Mon"),
+    (1, "Tue"),
+    (2, "Wed"),
+    (3, "Thu"),
+    (4, "Fri"),
+    (5, "Sat"),
+    (6, "Sun"),
+]
 
 # Fast lookups between the compose service id and the library UUID.
 LIB_BY_UUID = {lib["uuid"]: lib for lib in LIBRARIES}
@@ -161,11 +177,22 @@ def load_settings() -> dict:
     if SETTINGS_PATH.exists():
         try:
             with open(SETTINGS_PATH) as f:
-                return json.load(f)
+                data = json.load(f)
+                for lib in LIBRARIES:
+                    lid = lib["id"]
+                    data.setdefault(lid, {"uuid": lib["uuid"]})
+                    data[lid].setdefault("uuid", lib["uuid"])
+                    data[lid].setdefault("ingest_days", DEFAULT_INGEST_DAYS)
+                    data[lid].setdefault("schedule", DEFAULT_SCHEDULE.copy())
+                return data
         except (json.JSONDecodeError, OSError):
             pass
     return {
-        lib["id"]: {"ingest_days": DEFAULT_INGEST_DAYS, "uuid": lib["uuid"]}
+        lib["id"]: {
+            "ingest_days": DEFAULT_INGEST_DAYS,
+            "uuid": lib["uuid"],
+            "schedule": DEFAULT_SCHEDULE.copy(),
+        }
         for lib in LIBRARIES
     }
 
@@ -174,6 +201,42 @@ def save_settings(data: dict) -> None:
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(SETTINGS_PATH, "w") as f:
         json.dump(data, f, indent=2)
+
+
+def _parse_schedule(form, lid: str) -> dict:
+    days = []
+    for raw in form.getlist(f"schedule_days_{lid}"):
+        try:
+            day = int(raw)
+        except ValueError:
+            continue
+        if 0 <= day <= 6:
+            days.append(day)
+
+    def clean_time(name: str, fallback: str) -> str:
+        value = form.get(name, fallback).strip()
+        parts = value.split(":")
+        if len(parts) != 2:
+            return fallback
+        try:
+            hour, minute = int(parts[0]), int(parts[1])
+        except ValueError:
+            return fallback
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            return fallback
+        return f"{hour:02d}:{minute:02d}"
+
+    timezone = form.get(f"schedule_timezone_{lid}", DEFAULT_SCHEDULE["timezone"]).strip()
+    if not timezone:
+        timezone = DEFAULT_SCHEDULE["timezone"]
+
+    return {
+        "enabled": form.get(f"schedule_enabled_{lid}") == "on",
+        "days": sorted(set(days)),
+        "start": clean_time(f"schedule_start_{lid}", DEFAULT_SCHEDULE["start"]),
+        "end": clean_time(f"schedule_end_{lid}", DEFAULT_SCHEDULE["end"]),
+        "timezone": timezone,
+    }
 
 
 def load_status() -> dict:
@@ -305,6 +368,7 @@ def index():
             if lid not in settings:
                 settings[lid] = {"uuid": lib["uuid"]}
             settings[lid]["ingest_days"] = ingest_days
+            settings[lid]["schedule"] = _parse_schedule(request.form, lid)
 
         save_settings(settings)
         saved = True
@@ -315,6 +379,8 @@ def index():
         settings=settings,
         preset_options=PRESET_OPTIONS,
         preset_values=PRESET_VALUES,
+        days=DAYS,
+        default_schedule=DEFAULT_SCHEDULE,
         saved=saved,
         active_tab="settings",
     )
@@ -396,7 +462,16 @@ def api_status_post():
         commands[uuid] = queue
         save_commands(commands)
 
-    return jsonify({"ok": True, **({"command": command} if command else {})})
+    lib = LIB_BY_UUID.get(uuid)
+    schedule = None
+    if lib:
+        schedule = load_settings().get(lib["id"], {}).get("schedule", DEFAULT_SCHEDULE.copy())
+
+    return jsonify({
+        "ok": True,
+        **({"command": command} if command else {}),
+        **({"schedule": schedule} if schedule else {}),
+    })
 
 
 @app.route("/api/status-data")
@@ -484,6 +559,7 @@ def api_settings():
         result[lid] = {
             "ingest_days": entry.get("ingest_days", DEFAULT_INGEST_DAYS),
             "uuid": lib["uuid"],
+            "schedule": entry.get("schedule", DEFAULT_SCHEDULE.copy()),
         }
     return jsonify(result)
 

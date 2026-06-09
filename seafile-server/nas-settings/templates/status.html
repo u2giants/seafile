@@ -40,7 +40,7 @@
 
     main {
       flex: 1;
-      max-width: 720px;
+      max-width: 1080px;
       width: 100%;
       margin: 0 auto;
       padding: 36px 16px 48px;
@@ -69,6 +69,36 @@
 
     .page-heading { font-size: 1.4rem; font-weight: 700; color: #1a2a4a; margin-bottom: 6px; }
     .page-sub { color: #6b7280; font-size: 0.9rem; margin-bottom: 28px; }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .summary-card {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+
+    .summary-card label {
+      display: block;
+      color: #6b7280;
+      font-size: 0.74rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      margin-bottom: 5px;
+      text-transform: uppercase;
+    }
+
+    .summary-card .val {
+      color: #111827;
+      font-size: 1.15rem;
+      font-weight: 700;
+    }
 
     .card {
       background: #fff;
@@ -181,6 +211,12 @@
       font-size: 0.82rem;
     }
 
+    .meta-item .val.small {
+      color: #6b7280;
+      font-size: 0.82rem;
+      overflow-wrap: anywhere;
+    }
+
     .progress-bar-wrap {
       height: 6px;
       background: #e5e7eb;
@@ -194,6 +230,43 @@
       background: #f59e0b;
       border-radius: 3px;
       transition: width 0.5s ease;
+    }
+
+    .transfer-panel {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      margin-bottom: 14px;
+      padding: 12px 14px;
+    }
+
+    .transfer-title {
+      color: #374151;
+      font-size: 0.84rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .transfer-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 10px;
+    }
+
+    .transfer-grid label {
+      color: #9ca3af;
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      margin-bottom: 2px;
+      text-transform: uppercase;
+    }
+
+    .transfer-grid .val {
+      color: #374151;
+      font-size: 0.88rem;
+      font-weight: 600;
     }
 
     .no-data {
@@ -231,7 +304,14 @@
     </nav>
 
     <h1 class="page-heading">Sync Status</h1>
-    <p class="page-sub">Live status from the seaf-cli containers. Updates every 10 seconds.</p>
+    <p class="page-sub">Live status from the seaf-cli containers. Browser refreshes every 10 seconds.</p>
+
+    <div class="summary-grid" id="summary">
+      <div class="summary-card"><label>Online</label><div class="val" id="sum-online">—</div></div>
+      <div class="summary-card"><label>Busy</label><div class="val" id="sum-busy">—</div></div>
+      <div class="summary-card"><label>Upload speed</label><div class="val" id="sum-upload">—</div></div>
+      <div class="summary-card"><label>Heartbeat</label><div class="val" id="sum-heartbeat">—</div></div>
+    </div>
 
     <div id="cards">
       {% for lib in libraries %}
@@ -272,6 +352,20 @@
       return n.toLocaleString();
     }
 
+    function fmtRate(kb) {
+      if (kb === null || kb === undefined || Number.isNaN(Number(kb))) return "—";
+      const val = Number(kb);
+      if (val >= 1024) return (val / 1024).toFixed(1) + " MB/s";
+      return val.toFixed(1) + " KB/s";
+    }
+
+    function fmtLimit(raw) {
+      if (raw === null || raw === undefined || raw === "" || raw === "0") return "Unlimited";
+      const n = Number(raw);
+      if (Number.isNaN(n)) return raw;
+      return fmtRate(n);
+    }
+
     function fmtIngestDays(d) {
       if (d === null || d === undefined) return "—";
       if (d === 0) return "All files";
@@ -297,7 +391,7 @@
         const rate = entry.repos[0]?.rate_kb;
         let label = "Uploading";
         if (pct !== null && pct !== undefined) label += " " + pct + "%";
-        if (rate !== null && rate !== undefined && rate > 0) label += " · " + rate + " KB/s";
+        if (rate !== null && rate !== undefined && rate > 0) label += " · " + fmtRate(rate);
         return label;
       }
       if (state === "downloading") return "Downloading";
@@ -351,6 +445,7 @@
       }
 
       const repo  = (data.repos && data.repos[0]) || null;
+      const local = (data.local_repos && data.local_repos[0]) || null;
       const state = repo ? repo.state : null;
       const cls   = badgeClass(data, state, stale);
       const label = badgeLabel(data, state, stale);
@@ -366,31 +461,98 @@
         ? new Date(data.last_ingest_at).toLocaleString()
         : "—";
 
+      const heartbeat = data.heartbeat_interval_seconds
+        ? data.heartbeat_interval_seconds + "s report / " + (data.watchdog_interval_seconds || 10) + "s watchdog"
+        : "30s report / 10s watchdog";
+      const blocks = repo && repo.blocks_total
+        ? `${repo.blocks_done || 0} / ${repo.blocks_total}`
+        : "—";
+      const transferPanel = repo && (state === "uploading" || state === "downloading" || repo.rate_kb)
+        ? `<div class="transfer-panel">
+            <div class="transfer-title">Current transfer</div>
+            <div class="transfer-grid">
+              <div><label>Direction</label><div class="val">${state || "—"}</div></div>
+              <div><label>Speed</label><div class="val">${fmtRate(repo.rate_kb)}</div></div>
+              <div><label>Progress</label><div class="val">${repo.progress_pct ?? "—"}${repo.progress_pct !== null && repo.progress_pct !== undefined ? "%" : ""}</div></div>
+              <div><label>Blocks</label><div class="val">${blocks}</div></div>
+            </div>
+          </div>`
+        : "";
+
       bodyEl.innerHTML = `
         <div class="status-badge ${cls}">
           <span class="dot ${cls}"></span>
           ${label}
         </div>
         ${progressBar}
+        ${transferPanel}
         <div class="meta-grid">
           <div class="meta-item">
             <label>Daemon</label>
             <div class="val">${data.daemon_alive ? "Running (PID " + data.daemon_pid + ")" : "Not running"}</div>
           </div>
           <div class="meta-item">
+            <label>Heartbeat</label>
+            <div class="val">${heartbeat}</div>
+          </div>
+          <div class="meta-item">
             <label>Staging files</label>
             <div class="val">${fmtFiles(data.staging_files)}</div>
+          </div>
+          <div class="meta-item">
+            <label>Changed this ingest</label>
+            <div class="val">${fmtFiles(data.staging_changed_files)}</div>
           </div>
           <div class="meta-item">
             <label>Ingest window</label>
             <div class="val">${fmtIngestDays(data.ingest_days)}</div>
           </div>
           <div class="meta-item">
+            <label>Staging method</label>
+            <div class="val">${data.staging_method || "—"}</div>
+          </div>
+          <div class="meta-item">
             <label>Last ingest</label>
             <div class="val">${lastIngest}</div>
           </div>
+          <div class="meta-item">
+            <label>Upload limit</label>
+            <div class="val">${fmtLimit(data.config?.upload_limit)}</div>
+          </div>
+          <div class="meta-item">
+            <label>Download limit</label>
+            <div class="val">${fmtLimit(data.config?.download_limit)}</div>
+          </div>
+          <div class="meta-item">
+            <label>Local worktree</label>
+            <div class="val small">${local?.worktree || data.staging_path || "—"}</div>
+          </div>
+          <div class="meta-item">
+            <label>NAS source folder</label>
+            <div class="val small">${data.source_label || data.source_path || "—"}</div>
+          </div>
         </div>
       `;
+    }
+
+    function updateSummary(data) {
+      const entries = LIBRARIES.map(lib =>
+        data[lib.id] || Object.values(data).find(e => e.library_uuid === lib.uuid) || null
+      );
+      const online = entries.filter(e => e && !e.stale && e.daemon_alive).length;
+      const busy = entries.filter(e => {
+        const state = e?.repos?.[0]?.state;
+        return e && !e.stale && (state === "uploading" || state === "downloading");
+      }).length;
+      const uploadRate = entries.reduce((sum, e) => {
+        const repo = e?.repos?.[0];
+        return sum + (repo?.state === "uploading" ? Number(repo.rate_kb || 0) : 0);
+      }, 0);
+      const heartbeat = entries.find(e => e?.heartbeat_interval_seconds)?.heartbeat_interval_seconds || 30;
+      document.getElementById("sum-online").textContent = online + " / " + LIBRARIES.length;
+      document.getElementById("sum-busy").textContent = String(busy);
+      document.getElementById("sum-upload").textContent = fmtRate(uploadRate);
+      document.getElementById("sum-heartbeat").textContent = heartbeat + "s";
     }
 
     async function refresh() {
@@ -398,6 +560,7 @@
         const resp = await fetch("{{ url_for('api_status_data') }}");
         if (!resp.ok) return;
         const data = await resp.json();
+        updateSummary(data);
         LIBRARIES.forEach(lib => {
           // match by container_id (matches lib.id) or by library_uuid
           const entry = data[lib.id]

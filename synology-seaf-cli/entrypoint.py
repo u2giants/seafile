@@ -16,10 +16,16 @@ import time
 import urllib.request
 
 import seafile
+try:
+    from zoneinfo import ZoneInfo
+except Exception:
+    ZoneInfo = None
 
 
 DAEMON_START_TIMEOUT = 60  # seconds to wait for socket after seaf-cli start
 INIT_TIMEOUT = 30          # seconds to wait for .ini after seaf-cli init
+WATCHDOG_INTERVAL_SECONDS = 10
+STATUS_REPORT_INTERVAL_SECONDS = 30
 
 # Well-known seaf-daemon config keys reported in the status snapshot so the
 # nas-settings Config page can show current values. Any key can still be
@@ -253,7 +259,7 @@ class Client:
             except ProcessLookupError:
                 logger.error(f"seaf-daemon (PID {pid}) has exited — restarting container")
                 sys.exit(1)
-            time.sleep(10)
+            time.sleep(WATCHDOG_INTERVAL_SECONDS)
 
     def _collect_status(self) -> dict:
         """Gather current sync state for reporting to the nas-settings panel."""
@@ -296,6 +302,8 @@ class Client:
                                             tx.block_done / tx.block_total * 100, 1
                                         )
                                     entry["rate_kb"] = round(tx.rate / 1024.0, 1)
+                                    entry["blocks_done"] = getattr(tx, "block_done", None)
+                                    entry["blocks_total"] = getattr(tx, "block_total", None)
                             elif task.state == "error":
                                 entry["error"] = self.rpc.sync_error_id_to_str(task.error)
                     repos.append(entry)
@@ -349,6 +357,8 @@ class Client:
             "reported_at": datetime.datetime.utcnow().isoformat() + "Z",
             "daemon_pid": pid,
             "daemon_alive": daemon_alive,
+            "heartbeat_interval_seconds": STATUS_REPORT_INTERVAL_SECONDS,
+            "watchdog_interval_seconds": WATCHDOG_INTERVAL_SECONDS,
             "paused": paused,
             "repos": repos,
             "local_repos": local_repos,
@@ -356,6 +366,11 @@ class Client:
             "confdir": str(self.ini.parent),
             "initialized": self.ini.exists(),
             "staging_files": ingest.get("files"),
+            "staging_changed_files": ingest.get("changed_files"),
+            "staging_method": ingest.get("method"),
+            "source_path": ingest.get("source_path"),
+            "source_label": ingest.get("source_label"),
+            "staging_path": ingest.get("staging_path"),
             "last_ingest_at": ingest.get("last_ingest_at"),
             "ingest_days": ingest.get("ingest_days"),
         }
@@ -383,6 +398,50 @@ class Client:
             ok, out = self._run_seaf(["config", "-k", key], timeout=10)
             cache[key] = out if (ok and out) else None
         self._config_cache = cache
+
+    def _schedule_allows_sync(self, schedule: dict | None) -> bool:
+        if not schedule or not schedule.get("enabled"):
+            return True
+
+        tz = datetime.timezone.utc
+        if ZoneInfo is not None:
+            try:
+                tz = ZoneInfo(schedule.get("timezone") or "UTC")
+            except Exception:
+                pass
+        now = datetime.datetime.now(tz)
+
+        days = set(schedule.get("days") or [])
+        if not days:
+            return False
+
+        def minutes(value: str, fallback: str) -> int:
+            try:
+                hour, minute = value.split(":", 1)
+                return int(hour) * 60 + int(minute)
+            except Exception:
+                hour, minute = fallback.split(":", 1)
+                return int(hour) * 60 + int(minute)
+
+        start = minutes(schedule.get("start", "00:00"), "00:00")
+        end = minutes(schedule.get("end", "23:59"), "23:59")
+        current = now.hour * 60 + now.minute
+        today = now.weekday()
+        yesterday = (today - 1) % 7
+
+        if start == end:
+            return today in days
+        if start < end:
+            return today in days and start <= current < end
+        return (today in days and current >= start) or (yesterday in days and current < end)
+
+    def _apply_schedule(self, schedule: dict | None) -> None:
+        if not hasattr(self, "rpc"):
+            return
+        value = "true" if self._schedule_allows_sync(schedule) else "false"
+        for repo in self.rpc.get_repo_list(-1, -1):
+            if str(repo.auto_sync).lower() != value:
+                self.rpc.set_repo_property(repo.id, "auto-sync", value)
 
     def _dispatch_command(self, command: dict) -> dict:
         """Execute one queued seaf-cli command and return a result record.
@@ -515,9 +574,11 @@ class Client:
                         logger.info("Executing queued command: %s",
                                     command.get("verb"))
                         self._pending_results.append(self._dispatch_command(command))
+                    elif "schedule" in body:
+                        self._apply_schedule(body.get("schedule"))
                 except Exception:
                     pass  # best-effort; never crash the container
-                time.sleep(30)
+                time.sleep(STATUS_REPORT_INTERVAL_SECONDS)
 
         threading.Thread(target=_loop, daemon=True, name="status-reporter").start()
         logger.info("Status reporter started → %s", status_url)

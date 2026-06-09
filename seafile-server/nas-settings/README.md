@@ -41,6 +41,17 @@ Everything is keyed by **library UUID** (`SEAF_LIBRARY`) — stable and known to
 not the container's ephemeral Docker hostname. Admin actions in the browser call
 `POST /api/command {library_uuid, verb, args, confirm}`, which enqueues the command.
 
+## Heartbeat timing
+
+| Loop | Interval | Notes |
+| --- | ---: | --- |
+| Container status heartbeat | 30 s | POSTs `/api/status`, delivers command results, and receives the next queued command. |
+| Browser dashboard refresh | 10 s | GETs `/api/status-data`; the UI can only show new NAS data after the next heartbeat. |
+| Offline/stale threshold | 120 s | Four missed heartbeats marks a library offline. |
+| seaf-daemon watchdog | 10 s | Container exits if the daemon PID disappears, letting Docker restart it. |
+| Docker healthcheck | 60 s | Runs the image healthcheck with 10 s timeout and 3 retries. |
+| Ingest-window refresh | 1 h | Rebuilds the staged `/library` view and re-reads `/api/settings`. |
+
 ## Tests
 
 `test_app.py` drives the Flask test client through template rendering, the command-queue
@@ -56,7 +67,7 @@ stubbed test at `synology-seaf-cli/test_entrypoint.py`.
 
 ## Auth
 
-No separate login. On every request the app reads the browser's `sessionid` cookie (set by Seafile) and calls `GET http://seafile:8000/api/v2.1/admin/sysinfo/` internally to verify it belongs to a Seafile system admin. Non-admins and unauthenticated users are redirected to `/oauth/login/`.
+No separate login. On every request the app reads the browser's `sessionid` cookie (set by Seafile) and calls `GET http://seafile/api/v2.1/admin/sysinfo/` internally to verify it belongs to a Seafile system admin. Non-admins and unauthenticated users are redirected to the Seafile login with `next=/nas-settings/`.
 
 The `seafile` service name resolves because both containers are on `seafile-net`.
 
