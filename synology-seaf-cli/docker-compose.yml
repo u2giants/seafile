@@ -82,6 +82,29 @@ services:
       - SEAF_SETTINGS_URL=https://seafile.designflow.app/nas-settings/api/settings
       - SEAF_STATUS_TOKEN
 
+  seaf-cli-styleguides:
+    image: ghcr.io/u2giants/seafile:seaf-cli-latest
+    container_name: seaf-cli-styleguides
+    restart: unless-stopped
+    cpu_shares: 512
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    volumes:
+      - /volume1/styleguides:/source:ro
+      - seaf-cli-styleguides-staging:/library
+      - seaf-cli-styleguides-data:/seafile
+    environment:
+      - SEAF_SERVER_URL=https://seafile.designflow.app
+      - SEAF_USERNAME
+      - SEAF_PASSWORD
+      - SEAF_LIBRARY=b6e1d4c9-434e-4d8a-bde2-7f19be9c0838
+      - SEAF_INGEST_DAYS=730
+      - SEAF_SOURCE_PATH=/volume1/styleguides
+      - SEAF_SETTINGS_URL=https://seafile.designflow.app/nas-settings/api/settings
+      - SEAF_STATUS_TOKEN
+
 volumes:
   seaf-cli-char-licensed-data:
     name: seaf-cli-char-licensed-data
@@ -91,3 +114,7 @@ volumes:
     name: seaf-cli-generic-decor-data
   seaf-cli-generic-decor-staging:
     name: seaf-cli-generic-decor-staging
+  seaf-cli-styleguides-data:
+    name: seaf-cli-styleguides-data
+  seaf-cli-styleguides-staging:
+    name: seaf-cli-styleguides-staging
