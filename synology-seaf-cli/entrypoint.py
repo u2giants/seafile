@@ -94,7 +94,7 @@ class Client:
         self.seafile = Path("/seafile")
         self.socket = self.seafile.joinpath("seafile-data", "seafile.sock")
         self.target = Path("/library")
-        self.source = Path("/source")
+        self.source = Path("/library")
         self.folder_size_cache_path = self.seafile / "folder-size-cache.json"
         self._folder_size_scan_lock = threading.Lock()
         self._folder_size_scan_running = False
@@ -218,6 +218,14 @@ class Client:
         if self.upload_limit:
             subprocess.run(command + ["-k", "upload_limit", "-v", self.upload_limit], check=True)
 
+    def _write_seafile_ignore(self, target: Path) -> None:
+        ignore_file = target / ".seafile-ignore"
+        if not ignore_file.exists():
+            ignore_file.write_text(
+                "@eaDir\n#recycle\n@tmp\n.DS_Store\nThumbs.db\n*.tmp\n"
+            )
+            logger.info("Wrote .seafile-ignore to %s", target)
+
     def synchronize(self):
         core = [*self.binary, "sync", *self._get_credential_args()]
         for name, configuration in self.libraries.items():
@@ -235,6 +243,7 @@ class Client:
 
             target = self.target if name == "_" else self.target.joinpath(name)
             target.mkdir(parents=True, exist_ok=True)
+            self._write_seafile_ignore(target)
             command += ["-d", str(target)]
 
             if self.mfa_secret:

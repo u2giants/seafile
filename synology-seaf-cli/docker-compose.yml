@@ -1,44 +1,27 @@
-# Synology NAS — Seafile seaf-cli upload containers
-# One service per library. Each stages a date-filtered view of a NAS folder
-# into /library, then seaf-cli uploads /library to the Seafile server.
+# Synology NAS — Seafile seaf-cli real-time sync container
 #
-# === Settings ===
+# One container syncs all libraries bidirectionally in real-time.
+# Each NAS folder is bind-mounted read-write at /library/<name>.
+# seaf-cli watches for changes via inotify and syncs within seconds.
 #
-# SEAF_INGEST_DAYS     Only upload files modified within this many days.
-#                      Set per-library in the environment blocks below.
-#                      Remove the line (or leave blank) to upload all files.
-#
-#   Examples:
-#     - SEAF_INGEST_DAYS=365    # 1 year
-#     - SEAF_INGEST_DAYS=730    # 2 years
-#     - SEAF_INGEST_DAYS=1825   # 5 years
+# SEAF_LIBRARY_<KEY>  Library UUID for that key.
+#   Key must be a single word (no underscores) — it becomes the subfolder
+#   under /library and must match the bind-mount target exactly.
 #
 # SEAF_UPLOAD_LIMIT    Max upload speed in KB/s (optional).
 # SEAF_DOWNLOAD_LIMIT  Max download speed in KB/s (optional).
-#   These limit network throughput only, not the CPU hashing phase.
-#   Example: 10240 = 10 MB/s
-#
-# Resource limits:
-#   cpu_shares — soft CPU weight (default 1024; 512 = half priority under contention).
-#                NOTE: Synology kernel does not support CFS CPU quota (hard cpus limit).
-#                cpu_shares only throttles when the NAS is CPU-saturated, not always.
-#   memory     — hard limit; OOMKill if exceeded (container restarts cleanly).
-#                Tune up if OOMKills appear (check: docker events | grep oom).
-#
-# =================
 #
 # Image: ghcr.io/u2giants/seafile:seaf-cli-latest
-# Wrapper built on flrnnc/seafile-client — adds tini, fixed entrypoint.py.
-# Both containers LIVE on edgesynology1 as of 2026-05-08.
+# Container lives on edgesynology1.
 # See README.md for deploy instructions.
 
 name: seaf-cli
 
 services:
 
-  seaf-cli-char-licensed:
+  seaf-cli:
     image: ghcr.io/u2giants/seafile:seaf-cli-latest
-    container_name: seaf-cli-char-licensed
+    container_name: seaf-cli
     restart: unless-stopped
     cpu_shares: 512
     deploy:
@@ -46,75 +29,20 @@ services:
         limits:
           memory: 2g
     volumes:
-      - /volume1/mac/Decor/Character Licensed:/source:ro
-      - seaf-cli-char-licensed-staging:/library
-      - seaf-cli-char-licensed-data:/seafile
+      - /volume1/mac/Decor/Character Licensed:/library/char:rw
+      - /volume1/mac/Decor/Generic Decor:/library/decor:rw
+      - /volume1/styleguides:/library/guides:rw
+      - seaf-cli-data:/seafile
     environment:
       - SEAF_SERVER_URL=https://seafile.designflow.app
       - SEAF_USERNAME
       - SEAF_PASSWORD
-      - SEAF_LIBRARY=177cf9de-3066-482e-956a-7ae8d8786c6d
-      - SEAF_INGEST_DAYS=730
-      - SEAF_SOURCE_PATH=/volume1/mac/Decor/Character Licensed
-      - SEAF_SETTINGS_URL=https://seafile.designflow.app/nas-settings/api/settings
-      - SEAF_STATUS_TOKEN
-
-  seaf-cli-generic-decor:
-    image: ghcr.io/u2giants/seafile:seaf-cli-latest
-    container_name: seaf-cli-generic-decor
-    restart: unless-stopped
-    cpu_shares: 512
-    deploy:
-      resources:
-        limits:
-          memory: 512m
-    volumes:
-      - /volume1/mac/Decor/Generic Decor:/source:ro
-      - seaf-cli-generic-decor-staging:/library
-      - seaf-cli-generic-decor-data:/seafile
-    environment:
-      - SEAF_SERVER_URL=https://seafile.designflow.app
-      - SEAF_USERNAME
-      - SEAF_PASSWORD
-      - SEAF_LIBRARY=1b116ab7-d66b-4411-a691-21f34eadb731
-      - SEAF_INGEST_DAYS=730
-      - SEAF_SOURCE_PATH=/volume1/mac/Decor/Generic Decor
-      - SEAF_SETTINGS_URL=https://seafile.designflow.app/nas-settings/api/settings
-      - SEAF_STATUS_TOKEN
-
-  seaf-cli-styleguides:
-    image: ghcr.io/u2giants/seafile:seaf-cli-latest
-    container_name: seaf-cli-styleguides
-    restart: unless-stopped
-    cpu_shares: 512
-    deploy:
-      resources:
-        limits:
-          memory: 512m
-    volumes:
-      - /volume1/styleguides:/source:ro
-      - seaf-cli-styleguides-staging:/library
-      - seaf-cli-styleguides-data:/seafile
-    environment:
-      - SEAF_SERVER_URL=https://seafile.designflow.app
-      - SEAF_USERNAME
-      - SEAF_PASSWORD
-      - SEAF_LIBRARY=b6e1d4c9-434e-4d8a-bde2-7f19be9c0838
-      - SEAF_INGEST_DAYS=730
-      - SEAF_SOURCE_PATH=/volume1/styleguides
+      - SEAF_LIBRARY_CHAR=177cf9de-3066-482e-956a-7ae8d8786c6d
+      - SEAF_LIBRARY_DECOR=1b116ab7-d66b-4411-a691-21f34eadb731
+      - SEAF_LIBRARY_GUIDES=b6e1d4c9-434e-4d8a-bde2-7f19be9c0838
       - SEAF_SETTINGS_URL=https://seafile.designflow.app/nas-settings/api/settings
       - SEAF_STATUS_TOKEN
 
 volumes:
-  seaf-cli-char-licensed-data:
-    name: seaf-cli-char-licensed-data
-  seaf-cli-char-licensed-staging:
-    name: seaf-cli-char-licensed-staging
-  seaf-cli-generic-decor-data:
-    name: seaf-cli-generic-decor-data
-  seaf-cli-generic-decor-staging:
-    name: seaf-cli-generic-decor-staging
-  seaf-cli-styleguides-data:
-    name: seaf-cli-styleguides-data
-  seaf-cli-styleguides-staging:
-    name: seaf-cli-styleguides-staging
+  seaf-cli-data:
+    name: seaf-cli-data
