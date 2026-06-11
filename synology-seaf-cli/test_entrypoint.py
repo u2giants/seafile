@@ -124,6 +124,45 @@ check("folder-size cache totals bytes",
 check("folder-size cache includes child folder",
       any(x["name"] == "A" and x["bytes"] == 3 for x in cache["children"]))
 
+clone_client = ep.Client.__new__(ep.Client)
+clone_client.seafile = Path(tempfile.mkdtemp())
+data_dir = clone_client.seafile / "seafile-data"
+data_dir.mkdir()
+clone_db = data_dir / "clone.db"
+import sqlite3  # noqa: E402
+with sqlite3.connect(clone_db) as con:
+    for table in ["CloneTasks", "CloneTasksMoreInfo", "CloneVersionInfo",
+                  "CloneEncInfo", "CloneServerURL"]:
+        con.execute(f"create table {table} (repo_id TEXT PRIMARY KEY, value TEXT)")
+        con.execute(f"insert into {table} values (?, ?)", ("failed-repo", "x"))
+        con.execute(f"insert into {table} values (?, ?)", ("other-repo", "y"))
+class FakeCloneTask:
+    def __init__(self, rid, state):
+        self.repo_id = rid
+        self.state = state
+class FakeCloneRpc:
+    def __init__(self, tasks):
+        self._tasks = tasks
+    def get_clone_tasks(self):
+        return self._tasks
+clone_client.rpc = FakeCloneRpc([FakeCloneTask("failed-repo", "error"),
+                                 FakeCloneTask("active-repo", "fetch")])
+check("failed clone task cleanup runs",
+      ep.Client._clear_failed_clone_task(clone_client, "failed-repo") is True)
+with sqlite3.connect(clone_db) as con:
+    failed_left = con.execute(
+        "select count(*) from CloneTasks where repo_id = 'failed-repo'"
+    ).fetchone()[0]
+    other_left = con.execute(
+        "select count(*) from CloneTasks where repo_id = 'other-repo'"
+    ).fetchone()[0]
+check("failed clone task row removed only for target repo",
+      failed_left == 0 and other_left == 1)
+check("active clone task cleanup is skipped",
+      ep.Client._clear_failed_clone_task(clone_client, "active-repo") is False)
+check("clone.db backup created",
+      len(list(data_dir.glob("clone.db.bak.*"))) == 1)
+
 # Credential redaction in real _run_seaf output.
 import subprocess  # noqa: E402
 class _P:

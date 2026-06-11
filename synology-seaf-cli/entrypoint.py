@@ -9,6 +9,8 @@ import json
 import logging
 import os
 import signal
+import shutil
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -258,9 +260,67 @@ class Client:
             safe = ["***" if a in secrets else a for a in command]
             logger.debug(f"Running: {' '.join(safe)}")
 
+            self._clear_failed_clone_task(uuid)
             result = subprocess.run(command)
             if result.returncode != 0:
                 logger.error(f"`seaf-cli sync` for library {name!r} failed (exit {result.returncode})")
+
+    def _clear_failed_clone_task(self, repo_id: str) -> bool:
+        """Remove a stale failed clone task so seaf-cli can retry the library.
+
+        seaf-daemon keeps failed initial syncs in clone.db. A later `seaf-cli sync`
+        for the same repo then exits with "Task is already in progress", even
+        after the server-side cause is fixed. Only clear tasks already marked
+        error; active fetch/upload tasks are left alone.
+        """
+        try:
+            tasks = self.rpc.get_clone_tasks()
+        except Exception:
+            return False
+
+        failed = False
+        for task in tasks:
+            if getattr(task, "repo_id", "") != repo_id:
+                continue
+            if getattr(task, "state", "") == "error":
+                failed = True
+                break
+        if not failed:
+            return False
+
+        db = self.seafile / "seafile-data" / "clone.db"
+        if not db.exists():
+            return False
+
+        backup = db.with_name(f"{db.name}.bak.{int(time.time())}")
+        shutil.copy2(db, backup)
+        tables = [
+            "CloneTasks",
+            "CloneTasksMoreInfo",
+            "CloneVersionInfo",
+            "CloneEncInfo",
+            "CloneServerURL",
+        ]
+        removed = 0
+        with sqlite3.connect(db) as con:
+            for table in tables:
+                try:
+                    cur = con.execute(
+                        f"delete from {table} where repo_id = ?", (repo_id,)
+                    )
+                    removed += cur.rowcount
+                except sqlite3.Error as exc:
+                    logger.warning("Could not clean %s in clone.db: %s", table, exc)
+            con.commit()
+
+        if removed:
+            logger.warning(
+                "Cleared failed clone task for %s from clone.db; backup at %s",
+                repo_id, backup,
+            )
+            return True
+        backup.unlink(missing_ok=True)
+        return False
 
     def watch(self):
         pid = self._daemon_pid()
