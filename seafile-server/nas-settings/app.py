@@ -40,6 +40,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from flask import (
     Flask,
@@ -299,6 +300,126 @@ def normalize_schedule(schedule: dict | None) -> dict:
         "enabled": False,
     }
     return base
+
+
+def _library_settings_for_status(settings: dict, key: str, entry: dict) -> dict:
+    if key in settings and isinstance(settings[key], dict):
+        return settings[key]
+
+    library_uuid = entry.get("library_uuid") or key
+    lib = LIB_BY_UUID.get(library_uuid)
+    if lib and isinstance(settings.get(lib["id"]), dict):
+        return settings[lib["id"]]
+
+    for value in settings.values():
+        if isinstance(value, dict) and value.get("uuid") == library_uuid:
+            return value
+    return {}
+
+
+def _minutes(value: str, fallback: str) -> int:
+    clean = _clean_time(str(value), fallback)
+    hour, minute = clean.split(":", 1)
+    return int(hour) * 60 + int(minute)
+
+
+def _schedule_allows_sync(
+    schedule: dict | None,
+    now: datetime.datetime | None = None,
+) -> bool:
+    if not schedule or not schedule.get("enabled"):
+        return True
+
+    try:
+        tz = ZoneInfo(schedule.get("timezone") or "UTC")
+    except Exception:
+        tz = datetime.timezone.utc
+
+    current_time = now.astimezone(tz) if now else datetime.datetime.now(tz)
+    current = current_time.hour * 60 + current_time.minute
+    today = current_time.weekday()
+    yesterday = (today - 1) % 7
+
+    def window_allows(window: dict) -> bool:
+        if window.get("enabled") is False:
+            return False
+        days = {
+            day for day in (window.get("days") or [])
+            if isinstance(day, int) and 0 <= day <= 6
+        }
+        if not days:
+            return False
+
+        start = _minutes(window.get("start", "00:00"), "00:00")
+        end = _minutes(window.get("end", "23:59"), "23:59")
+
+        if start == end:
+            return today in days
+        if start < end:
+            return today in days and start <= current < end
+
+        # Overnight window, e.g. 19:00 -> 08:00.
+        return (today in days and current >= start) or (
+            yesterday in days and current < end
+        )
+
+    windows = schedule.get("windows")
+    if isinstance(windows, dict):
+        return any(
+            window_allows(window)
+            for window in windows.values()
+            if isinstance(window, dict)
+        )
+
+    return window_allows({
+        "enabled": True,
+        "days": schedule.get("days") or [],
+        "start": schedule.get("start", "00:00"),
+        "end": schedule.get("end", "23:59"),
+    })
+
+
+def _format_day_list(days: list[int]) -> str:
+    ordered = [label for value, label in DAYS if value in days]
+    if ordered == ["Mon", "Tue", "Wed", "Thu", "Fri"]:
+        return "weekdays"
+    if ordered == ["Sat", "Sun"]:
+        return "weekends"
+    return ", ".join(ordered) if ordered else "no days"
+
+
+def _schedule_summary(schedule: dict | None) -> str | None:
+    if not schedule or not schedule.get("enabled"):
+        return None
+
+    timezone = schedule.get("timezone") or "UTC"
+    pieces = []
+    windows = schedule.get("windows")
+    if isinstance(windows, dict):
+        for key, _label, _days, _start, _end in SCHEDULE_WINDOWS:
+            window = windows.get(key)
+            if not isinstance(window, dict) or window.get("enabled") is False:
+                continue
+            days = _format_day_list(window.get("days") or [])
+            pieces.append(
+                f"{days} {window.get('start', '00:00')}-{window.get('end', '23:59')}"
+            )
+    else:
+        pieces.append(
+            "{} {}-{}".format(
+                _format_day_list(schedule.get("days") or []),
+                schedule.get("start", "00:00"),
+                schedule.get("end", "23:59"),
+            )
+        )
+
+    if not pieces:
+        return f"Schedule is enabled, but no active sync windows are configured for {timezone}."
+
+    return (
+        "Schedule is currently outside the sync window "
+        f"({'; '.join(pieces)} {timezone})."
+    )
 
 
 def _parse_schedule(form, lid: str) -> dict:
@@ -570,6 +691,7 @@ def api_status_data():
     raw = load_status()
     commands = load_commands()
     results = load_results()
+    settings = load_settings()
     now = datetime.datetime.utcnow()
     result = {}
     for key, entry in raw.items():
@@ -585,12 +707,34 @@ def api_status_data():
                 seconds_ago = int(delta)
             except Exception:
                 pass
+
+        lib_settings = _library_settings_for_status(settings, key, entry)
+        schedule = (
+            normalize_schedule(lib_settings.get("schedule"))
+            if isinstance(lib_settings, dict)
+            else None
+        )
+        schedule_allows_sync = _schedule_allows_sync(schedule)
+        schedule_note = None
+        if schedule and schedule.get("enabled") and not schedule_allows_sync:
+            schedule_note = _schedule_summary(schedule)
+            if entry.get("paused") and schedule_note:
+                schedule_note += (
+                    " Resume can be accepted, then the next heartbeat will pause "
+                    "sync again until the schedule opens. It will resume "
+                    "automatically when the schedule opens, or disable/change "
+                    "the schedule to sync now."
+                )
+
         result[uuid] = {
             **entry,
             "stale": stale,
             "seconds_ago": seconds_ago,
             "pending_commands": commands.get(uuid, []),
             "recent_results": list(reversed(results.get(uuid, []))),
+            "schedule": schedule,
+            "schedule_allows_sync": schedule_allows_sync,
+            "schedule_note": schedule_note,
         }
     return jsonify(result)
 
@@ -644,6 +788,7 @@ def api_settings():
         lid = lib["id"]
         entry = settings.get(lid, {"ingest_days": DEFAULT_INGEST_DAYS, "uuid": lib["uuid"]})
         result[lid] = {
+            **entry,
             "ingest_days": entry.get("ingest_days", DEFAULT_INGEST_DAYS),
             "uuid": lib["uuid"],
             "schedule": normalize_schedule(entry.get("schedule")),

@@ -153,6 +153,24 @@
     .status-badge.idle   { background: #f9fafb; color: #6b7280; }
     .status-badge.paused { background: #eff6ff; color: #1d4ed8; }
 
+    .command-note {
+      border-radius: 6px;
+      font-size: 0.84rem;
+      line-height: 1.45;
+      margin: -4px 0 16px;
+      padding: 10px 12px;
+    }
+    .command-note.info {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #1e40af;
+    }
+    .command-note.warn {
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      color: #92400e;
+    }
+
     .dot {
       width: 9px; height: 9px;
       border-radius: 50%;
@@ -338,6 +356,7 @@
 
   <script>
     const LIBRARIES = {{ libraries | tojson }};
+    const pendingCommands = {};
 
     function ago(seconds) {
       if (seconds === null || seconds === undefined) return "unknown";
@@ -403,6 +422,9 @@
 
     async function sendCommand(libraryUuid, verb, btn) {
       btn.disabled = true;
+      const label = verb === "resume" ? "Resume" : "Pause";
+      pendingCommands[libraryUuid] =
+        `${label} requested. Waiting for the next seaf-cli heartbeat to confirm the actual state.`;
       try {
         const resp = await fetch("{{ url_for('api_command') }}", {
           method: "POST",
@@ -411,10 +433,37 @@
         });
         if (!resp.ok) throw new Error("server error");
       } catch (e) {
+        pendingCommands[libraryUuid] = null;
         alert("Failed to send command. Try again.");
       } finally {
         btn.disabled = false;
+        refresh();
       }
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, ch => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[ch]);
+    }
+
+    function commandNote(lib, data) {
+      const pending = pendingCommands[lib.uuid];
+
+      if (data && !data.stale && data.schedule_note) {
+        pendingCommands[lib.uuid] = null;
+        return `<div class="command-note warn">${escapeHtml(data.schedule_note)}</div>`;
+      }
+
+      if (pending) {
+        return `<div class="command-note info">${escapeHtml(pending)}</div>`;
+      }
+
+      return "";
     }
 
     function renderCard(lib, data) {
@@ -450,6 +499,8 @@
       const cls   = badgeClass(data, state, stale);
       const label = badgeLabel(data, state, stale);
 
+      const note = commandNote(lib, data);
+
       let progressBar = "";
       if (!stale && state === "uploading" && repo && repo.progress_pct !== null) {
         progressBar = `<div class="progress-bar-wrap">
@@ -484,6 +535,7 @@
           <span class="dot ${cls}"></span>
           ${label}
         </div>
+        ${note}
         ${progressBar}
         ${transferPanel}
         <div class="meta-grid">
