@@ -12,14 +12,14 @@ seafile-server/               Linode VPS — live at seafile.designflow.app
 ├── caddy.yml                 Docker Compose: Caddy reverse proxy + TLS
 ├── nas-settings.yml          Docker Compose: NAS sync settings web panel
 ├── .env.example              Environment variable template (never commit .env)
-├── nas-settings/             Flask app — seaf-cli control panel (status/controls/config/libraries) + ingest window
+├── nas-settings/             Flask app — seaf-cli control panel + ingest/schedule settings
 └── custom-templates/         Seahub template overrides (Microsoft login button + NAS Sync sidebar links)
 
 synology-seaf-cli/            NYC Synology NAS — running on edgesynology1
 ├── Dockerfile                Wrapper image built on flrnnc/seafile-client
 ├── entrypoint.py             Fixed Seafile daemon entrypoint (replaces upstream default)
-├── seaf-entrypoint.py        Date-filter staging wrapper; launches entrypoint.py
-├── docker-compose.yml        One seaf-cli container per library
+├── seaf-entrypoint.py        Legacy staging wrapper kept for workflow/test compatibility
+├── docker-compose.yml        Single NAS seaf-cli container with multi-library mounts
 ├── .env.example              NAS sync credentials template
 └── README.md                 Synology setup and redeploy instructions
 
@@ -51,7 +51,7 @@ docs/
 | Credentials | `/opt/seafile/CREDENTIALS.txt` on the VPS (root-only, never in this repo) |
 | GitHub | https://github.com/u2giants/seafile |
 
-> **Current status (verified 2026-06-09):** VPS server, `nas-settings`, and both NAS seaf-cli containers are reporting heartbeats. The Synology containers still need a recreate to pick up the newest NAS-agent image features such as cached folder-size reporting. See `AGENTS.md` → Pending work.
+> **Current status (verified 2026-06-16):** VPS server, `nas-settings`, and the Synology `seaf-cli` container are running. The NAS container is healthy and the panel is receiving three per-library status heartbeats from the current image; see `AGENTS.md` for current pending work.
 
 ## AI Sessions
 

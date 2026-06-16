@@ -2,7 +2,7 @@
 
 Flask web app that gives the Seafile server's web UI a **GUI for the seaf-cli client**
 running on the NAS — everything seaf-cli can do via the command line, surfaced as
-admin controls. It also keeps the original ingest-window and sync-schedule settings.
+admin controls. It also owns per-library ingest-window and sync-schedule settings.
 
 Accessible at `https://seafile.designflow.app/nas-settings/` via a link in the Seafile
 System Admin sidebar.
@@ -37,8 +37,9 @@ container's `entrypoint.py` **polls** every 30 s:
 3. The container runs it (via the daemon RPC for pause/resume, otherwise `seaf-cli`) and
    reports the result on its next POST.
 
-Everything is keyed by **library UUID** (`SEAF_LIBRARY`) — stable and known to both sides —
-not the container's ephemeral Docker hostname. Admin actions in the browser call
+Everything is keyed by **library UUID**. In the current single NAS container, `entrypoint.py`
+discovers `SEAF_LIBRARY_<KEY>` variables and POSTs one heartbeat per UUID; the legacy
+single-library `SEAF_LIBRARY` variable is only for compatibility. Admin actions in the browser call
 `POST /api/command {library_uuid, verb, args, confirm}`, which enqueues the command.
 
 ## Heartbeat timing
@@ -57,7 +58,8 @@ not the container's ephemeral Docker hostname. Admin actions in the browser call
 ## Tests
 
 `test_app.py` drives the Flask test client through template rendering, the command-queue
-tiers/confirm gating, UUID routing, and result persistence — no live Seafile/NAS needed:
+tiers/confirm gating, UUID routing, result persistence, and weekday/weekend schedule
+serialization — no live Seafile/NAS needed:
 
 ```bash
 cd seafile-server/nas-settings
@@ -75,23 +77,48 @@ The `seafile` service name resolves because both containers are on `seafile-net`
 
 ## Public API endpoint
 
-`GET /nas-settings/api/settings` — no auth required. Returns JSON keyed by container name:
+`GET /nas-settings/api/settings` — no auth required. Returns non-secret JSON keyed by
+container name:
 
 ```json
 {
-  "seaf-cli-char-licensed": {"ingest_days": 730, "uuid": "177cf9de-..."},
-  "seaf-cli-generic-decor": {"ingest_days": 730, "uuid": "1b116ab7-..."}
+  "seaf-cli-char-licensed": {
+    "ingest_days": 730,
+    "uuid": "177cf9de-...",
+    "schedule": {
+      "enabled": true,
+      "timezone": "America/New_York",
+      "windows": {
+        "weekdays": {
+          "enabled": true,
+          "days": [0, 1, 2, 3, 4],
+          "start": "19:00",
+          "end": "07:00"
+        },
+        "weekends": {
+          "enabled": false,
+          "days": [5, 6],
+          "start": "09:00",
+          "end": "17:00"
+        }
+      }
+    }
+  }
 }
 ```
 
-The NAS seaf-cli containers poll this endpoint hourly to pick up ingest window changes without a restart. `ingest_days: null` means "all files, no limit".
+The NAS seaf-cli containers poll this endpoint hourly for ingest-window changes and receive
+the current schedule on each 30-second status heartbeat. `ingest_days: null` means
+"all files, no limit". Schedule day numbers use Python's `weekday()` convention:
+Monday is `0`, Sunday is `6`. If a window's end time is earlier than its start time,
+the window runs overnight.
 
 ## API endpoints
 
 | Endpoint | Auth | Purpose |
 |----------|------|---------|
-| `GET /api/settings` | none | Containers poll this for per-library `ingest_days` (see below). |
-| `POST /api/status` | `X-Status-Token` | Containers report state + command results; response carries the next queued command. |
+| `GET /api/settings` | none | Containers poll this for per-library `ingest_days` and schedule metadata. |
+| `POST /api/status` | `X-Status-Token` | Containers report state + command results; response carries the next queued command, or the current schedule when no command is queued. |
 | `GET /api/status-data` | admin session | Browser polls this: per-library status, staleness, pending commands, recent results. |
 | `POST /api/command` | admin session | Enqueue a command `{library_uuid, verb, args, confirm}`. |
 
@@ -104,7 +131,7 @@ Persisted under `/data/` inside the `nas-settings-data` Docker volume:
 
 | File | Contents |
 |------|----------|
-| `settings.json` | Per-library ingest window. |
+| `settings.json` | Per-library ingest window and weekday/weekend sync schedule. |
 | `status.json` | Latest status report per library UUID. |
 | `commands.json` | FIFO queue of pending commands per library UUID. |
 | `results.json` | Most recent command results per library UUID (capped at 25). |
@@ -120,13 +147,18 @@ Deploy = **pull** that image — do not build on the VPS (§25 model; see AGENTS
 #    "nas-settings image" workflow to publish: https://github.com/u2giants/seafile/actions
 # 2. Pull + recreate on the VPS:
 cd /opt/seafile
-docker compose -f seafile-server.yml -f caddy.yml \
+docker compose --env-file /opt/seafile/.env \
   -f /home/ai/seafile-repo/seafile-server/nas-settings.yml \
   pull nas-settings
-docker compose -f seafile-server.yml -f caddy.yml \
+docker compose --env-file /opt/seafile/.env \
   -f /home/ai/seafile-repo/seafile-server/nas-settings.yml \
-  up -d nas-settings
+  up -d --force-recreate nas-settings
+docker logs --tail 80 nas-settings
 ```
+
+Healthy logs include repeated `POST /api/status HTTP/1.1" 200` entries. With the
+current single NAS `seaf-cli` container, seeing three POSTs roughly every 30 seconds
+means all three configured library UUIDs are reporting.
 
 Rollback: pin `image:` in `nas-settings.yml` to a prior `:nas-settings-sha-<commit>` and `up -d`.
 

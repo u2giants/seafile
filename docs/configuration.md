@@ -96,6 +96,41 @@ NAS_STATUS_TOKEN=<random string>           # shared with seaf-cli containers for
 
 Used by the `nas-settings` container. `SEAFILE_INTERNAL_URL` and `SEAFILE_PUBLIC_HOST` are hardcoded in `nas-settings.yml` (not sourced from `.env`) because they are deployment-invariant for this installation.
 
+The panel persists per-library ingest/schedule settings in the `nas-settings-data`
+Docker volume at `/data/settings.json`. The schedule stored for each library has
+this normalized shape:
+
+```json
+{
+  "enabled": false,
+  "timezone": "America/New_York",
+  "windows": {
+    "weekdays": {"enabled": true, "days": [0, 1, 2, 3, 4], "start": "19:00", "end": "07:00"},
+    "weekends": {"enabled": false, "days": [5, 6], "start": "09:00", "end": "17:00"}
+  }
+}
+```
+
+`enabled` gates the whole schedule. Each window has its own enabled flag, fixed
+day set, and start/end time. End earlier than start means the window runs
+overnight. The NAS agent also accepts the previous one-window schedule shape for
+backward compatibility, but the panel now writes weekday/weekend windows.
+
+### NAS / Windows seaf-cli agent
+
+These environment variables are set in `synology-seaf-cli/docker-compose.yml`, the
+Windows workstation compose file, or the host env file used with those compose files:
+
+| Variable | Purpose |
+|----------|---------|
+| `SEAF_SERVER_URL` | Public Seafile URL used by `seaf-cli`. |
+| `SEAF_USERNAME` / `SEAF_PASSWORD` | Local machine account credentials for `nas-sync@popcre.com`. |
+| `SEAF_LIBRARY_<KEY>` | Multi-library NAS mode. The suffix becomes the `/library/<key>` subfolder and the value is the library UUID, for example `SEAF_LIBRARY_CHAR`, `SEAF_LIBRARY_DECOR`, and `SEAF_LIBRARY_GUIDES`. |
+| `SEAF_LIBRARY` | Legacy/single-library mode. If set, multi-library variables are ignored. |
+| `SEAF_SETTINGS_URL` | `nas-settings` `/api/settings` URL for ingest settings and non-secret schedule metadata. |
+| `SEAF_STATUS_TOKEN` | Shared token used when posting status to `/api/status`. |
+| `SEAF_UPLOAD_LIMIT` / `SEAF_DOWNLOAD_LIMIT` | Optional seaf-cli transfer limits in KB/s. |
+
 ---
 
 ## /opt/seafile-data/seafile/conf/seahub_settings.py
@@ -138,9 +173,12 @@ The tenant-specific authorization/token URLs (with the tenant ID rather than `/c
 ```ini
 [fileserver]
 port=8082
+use_go_fileserver = true
+max_sync_file_count = 5000000
+fs_id_list_request_timeout = 600
 ```
 
-Minimal. Seafile generates defaults for everything else. Port 8082 is used internally within the container between seafile-server and seahub — it is not exposed to the host.
+Port 8082 is used internally within the container between seafile-server and seahub — it is not exposed to the host. `max_sync_file_count = 5000000` and `fs_id_list_request_timeout = 600` were added on 2026-06-11 after the Character Licensed library exceeded Seafile's default sync file-count limit; keep them unless the library structure changes enough to prove a lower limit is safe. Live backups from that edit were written next to the file as timestamped `.bak.*` copies.
 
 ---
 

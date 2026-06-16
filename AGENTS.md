@@ -55,7 +55,7 @@ Docs:
 - `docs/configuration.md` - environment variables, config files, feature flags.
 - `docs/deployment.md` - deploy/release/environment/rollback workflow.
 - Folder READMEs: `seafile-server/nas-settings/README.md`, `synology-seaf-cli/README.md`, `seafile-server/custom-templates/README.md`, `windows-workstation/README.md`.
-- `HANDOFF.md` - temporary continuation doc because NAS-side deployment work remains unfinished.
+- `HANDOFF.md` - temporary continuation doc only when work is unfinished, blocked, or partially deployed.
 
 Scripts:
 
@@ -118,7 +118,7 @@ No upstream source files are modified in-repo; these are runtime template overri
 | Change NAS Settings panel behavior | `seafile-server/nas-settings/app.py`, `seafile-server/nas-settings/templates/`, `seafile-server/nas-settings/test_app.py`, `seafile-server/nas-settings/README.md` | `seafile-server/seafile-server.yml` unless runtime wiring changes |
 | Add/change sync schedule UI | `seafile-server/nas-settings/app.py`, `seafile-server/nas-settings/templates/settings.html`, `synology-seaf-cli/entrypoint.py`, tests | Manual per-container edits on the NAS |
 | Add/change cached folder-size view | `synology-seaf-cli/entrypoint.py`, `seafile-server/nas-settings/templates/libraries.html`, tests, relevant READMEs | Live recursive folder-size calculation in Seahub file browsing |
-| Change seaf-cli staging/filtering | `synology-seaf-cli/seaf-entrypoint.py`, `synology-seaf-cli/test_entrypoint.py`, `synology-seaf-cli/README.md` | Upstream `flrnnc/seafile-client` image code |
+| Change seaf-cli sync behavior | `synology-seaf-cli/entrypoint.py`, `synology-seaf-cli/test_entrypoint.py`, `synology-seaf-cli/README.md` | Upstream `flrnnc/seafile-client` image code or manual live container edits |
 | Add a synced NAS library | `synology-seaf-cli/docker-compose.yml`, `seafile-server/nas-settings/app.py` `LIBRARIES`, docs identifiers | Reusing an existing library UUID or data volume |
 | Change VPS containers | `seafile-server/seafile-server.yml`, `seafile-server/caddy.yml`, `seafile-server/nas-settings.yml`, `docs/deployment.md`, `docs/configuration.md` | Container names unless a migration plan exists |
 | Change CI build/publish | `.github/workflows/seaf-cli-image.yml`, `.github/workflows/nas-settings-image.yml`, `docs/deployment.md` | Add SSH deploy steps to CI |
@@ -133,14 +133,15 @@ No upstream source files are modified in-repo; these are runtime template overri
 |---|---|---|---|
 | GitHub repo | `https://github.com/u2giants/seafile` | Git remote | `main` only; no PR branch model documented |
 | Public host | `seafile.designflow.app` | `seafile-server/.env.example`, compose labels, live DNS | DNS-only through Cloudflare; do not proxy |
-| VPS | `172.233.14.233` | docs/live host | Linode VPS running Seafile and `nas-settings` |
-| NAS | `edgesynology1`, `192.168.3.100` | docs/runtime | Synology NAS; remote SSH access path is unknown, verify with Albert |
+| VPS | `172.233.14.233`, host `seafile-br` | docs/live host | Linode VPS running Seafile and `nas-settings`; do not confuse with other Hetzner/Tailscale hosts that may have stale repo clones |
+| NAS | `edgesynology1`, `192.168.3.100` | docs/runtime | Synology NAS; from the VPS use `ssh edge1` as `ai` over Tailscale MagicDNS |
 | Microsoft Entra tenant | `1caeb1c0-a087-4cb9-b046-a5e22404f971` | live `seahub_settings.py`, docs | Tenant-locked POP Creations SSO |
 | Entra app/client | `8d9da03c-e5cd-4a23-b987-32aaaed31fe7` | live `seahub_settings.py`, docs | Client secret value is not committed |
 | Seafile admin account | `4cba3f5721f7436fbe06a2b154ee296a@auth.local` | `ccnet_db.EmailUser`, `seahub_db.profile_profile` | Contact email `albert@popcre.com`; current active admin |
 | NAS sync account | `95520c9b8c914cddb93d8d1bf65fa528@auth.local` | `ccnet_db.EmailUser`, `seahub_db.profile_profile` | Contact email `nas-sync@popcre.com`; non-admin machine account |
 | Character Licensed library | `177cf9de-3066-482e-956a-7ae8d8786c6d` | `synology-seaf-cli/docker-compose.yml`, `seafile-server/nas-settings/app.py`, database | NAS path `/volume1/mac/Decor/Character Licensed`; owner is current SSO admin |
 | Generic Decor library | `1b116ab7-d66b-4411-a691-21f34eadb731` | `synology-seaf-cli/docker-compose.yml`, `seafile-server/nas-settings/app.py`, database | NAS path `/volume1/mac/Decor/Generic Decor`; owner is current SSO admin |
+| Styleguides library | `b6e1d4c9-434e-4d8a-bde2-7f19be9c0838` | `synology-seaf-cli/docker-compose.yml` | NAS path `/volume1/styleguides`; synced by the current single NAS `seaf-cli` container |
 | Current internal public shares | `InnerPubRepo.permission = r` for both NAS libraries | `seafile_db.InnerPubRepo` | Means all logged-in users can read. For read-write, use group/user shares with write permission |
 | S3 block bucket | `seafile-s3` | `.env`, `docs/configuration.md` | Linode Object Storage `br-gru-1` |
 | S3 commit bucket | `seafile-s3-commits` | `.env`, `docs/configuration.md` | Must remain distinct |
@@ -161,8 +162,7 @@ Do not casually rename, regenerate, or replace documented identifiers.
 | `seafile-redis` | Redis cache/session support | Docker Compose on VPS | none | `redis` |
 | `seafile-caddy` | Caddy reverse proxy and TLS | Docker Compose on VPS | none | `lucaslorentz/caddy-docker-proxy:2.12-alpine` |
 | `nas-settings` | Flask admin panel and NAS command/status API | Docker Compose on VPS, image from GitHub Actions | none | `ghcr.io/u2giants/seafile:nas-settings-latest` |
-| `seaf-cli-char-licensed` | Uploads Character Licensed source folder to Seafile | Docker Compose on `edgesynology1` NAS, or Windows alternative when cut over | none | `ghcr.io/u2giants/seafile:seaf-cli-latest` |
-| `seaf-cli-generic-decor` | Uploads Generic Decor source folder to Seafile | Docker Compose on `edgesynology1` NAS, or Windows alternative when cut over | none | `ghcr.io/u2giants/seafile:seaf-cli-latest` |
+| `seaf-cli` | Syncs Character Licensed, Generic Decor, and Styleguides NAS folders to Seafile | Docker Compose on `edgesynology1` NAS, or Windows alternative when cut over | none | `ghcr.io/u2giants/seafile:seaf-cli-latest` |
 
 There is no Coolify, Supabase, deploy app ID, or webhook deploy target for this project.
 
@@ -215,19 +215,33 @@ The upstream community image has caused silent sync failures and does not provid
 Do not change because:
 Using the upstream image directly removes production safeguards and the NAS Settings control loop.
 
-### `/source` and `/library` are intentionally separate
+### NAS `/library/<key>` paths are live bind mounts
 
 Looks like:
-The NAS folder should be mounted directly as `/library`.
+`/library` is a disposable staging volume from the older wrapper design.
 
 Actually:
-The NAS source is read-only at `/source`; `/library` is a Docker staging volume populated by `seaf-entrypoint.py`.
+The current NAS compose bind-mounts live NAS folders directly under `/library/<key>` in the single `seaf-cli` container. The named `seaf-cli-data` volume is only for seaf-daemon state and caches.
 
 Why:
-The staging layer enables ingest-window filtering, `@eaDir` skipping, hardlink/copy staging, and safe refreshes before `seaf-cli` uploads.
+The current wrapper supports multi-library sync directly through `SEAF_LIBRARY_<KEY>` variables and `.seafile-ignore` files.
 
 Do not change because:
-Bypassing staging can upload the wrong tree or remove the filtering behavior.
+Deleting `/library` paths or treating them as cache can affect live NAS data. To force sync-state rebuilds, operate on `seaf-cli-data` only after an explicit rollback/recovery plan.
+
+### Sync schedule has weekday and weekend windows
+
+Looks like:
+The schedule is a single days/start/end block.
+
+Actually:
+The panel writes a schedule with separate `weekdays` and `weekends` windows, a shared timezone, and an outer `enabled` flag. The NAS agent still accepts the older one-window shape for backward compatibility.
+
+Why:
+Business-hour and off-hour sync needs differ between weekdays and weekends, and overnight windows are common.
+
+Do not change because:
+Collapsing the shape back to one window removes the requested granularity and can make existing settings ambiguous.
 
 ### `nas-settings` cannot push commands to the NAS
 
@@ -257,19 +271,41 @@ The NAS agent needs ingest/schedule settings before it can report authenticated 
 Do not change because:
 Adding browser-session auth would break the NAS agent's hourly settings refresh.
 
-### NAS deploy is not done through CI or NAS MCP
+### NAS deploy uses SSH from the VPS
 
 Looks like:
-GitHub Actions or the NAS MCP should recreate containers after image publish.
+GitHub Actions or the NAS MCP should recreate containers after image publish, or the old per-library container names should be managed directly.
 
 Actually:
-CI only publishes images. The `nas-direct` MCP is read-only for Docker diagnostics; NAS recreates are done by an operator over SSH on `edgesynology1`.
+CI only publishes images. From the VPS, `ssh edge1` logs in to `edgesynology1` as `ai`; Docker requires `sudo -n /var/packages/ContainerManager/target/usr/bin/docker`. The live NAS deployment is the single `seaf-cli` container from `synology-seaf-cli/docker-compose.yml`.
 
 Why:
-There is no deploy platform, and state-changing Docker commands are blocked through the MCP.
+There is no deploy platform. The `ai` account has a narrow sudoers drop-in for the Synology Docker binary, and old staged files such as `/tmp/seaf-cli-compose.yml` may still describe obsolete per-library containers.
 
 Do not change because:
-Documenting MCP/CI as a deploy path would strand future sessions on commands that cannot work.
+Using stale two-service compose files or old container names can recreate the wrong topology. Stage the current compose file and verify `docker compose config --services` shows only `seaf-cli` before running `up`.
+
+### Verify the live VPS before deploying
+
+What changed:
+On 2026-06-16, a deployment attempt first landed on the wrong host (`root@hetz`, Tailscale IP `100.66.37.58`) where `/worksp/seafile` was a stale repo clone and no Seafile containers existed.
+
+Why:
+The live public host resolves to `172.233.14.233` and should identify as `seafile-br`; `/opt/seafile` holds the runtime `.env` and base compose files, while `nas-settings.yml` is deployed from `/home/ai/seafile-repo/seafile-server/nas-settings.yml`.
+
+Future sessions should:
+Before running Docker deploy commands, confirm `hostname`, `ls -la /opt/seafile`, and `docker ps` show `seafile`, `seafile-caddy`, and `nas-settings`. If those are absent, stop and find the live VPS instead of adapting commands to the wrong machine.
+
+### seaf-cli failed clone tasks self-heal
+
+What changed:
+On 2026-06-11, Character Licensed hit Seafile's "too many files" sync limit and left a failed clone task in `/seafile/seafile-data/clone.db`. Commit `b3436f7` added wrapper cleanup for failed clone tasks before retrying `seaf-cli sync`.
+
+Why:
+After the server-side limit was raised, seaf-daemon still returned "Task is already in progress" for the stale failed clone task.
+
+Future sessions should:
+Do not delete the `seaf-cli-data` volume for this failure mode. Confirm the server has the intended fileserver limits, then let the current image clear only `state=error` clone rows for the affected repo; active fetch/upload tasks are intentionally left alone.
 
 ### Seahub template overrides are full-file copies
 
@@ -372,12 +408,10 @@ Never commit actual secret values.
 | `SEAF_USERNAME` | seaf-cli account username | NAS `/tmp/.env` or Windows env | no | yes |
 | `SEAF_PASSWORD` | seaf-cli account password | NAS `/tmp/.env` or Windows env | no | yes |
 | `SEAF_TOKEN` | Optional seaf-cli auth token alternative | environment only if used | no | optional |
-| `SEAF_LIBRARY` | Seafile library UUID for a container | NAS/Windows compose | no | yes |
+| `SEAF_LIBRARY_<KEY>` | Multi-library UUID mapping; key maps to `/library/<key>` | NAS compose | no | yes |
+| `SEAF_LIBRARY` | Legacy single-library UUID; if set, multi-library vars are ignored | Windows/single-library env only | no | optional |
 | `SEAF_LIBRARY_UUID` | Legacy seaf-cli library UUID env | code supports legacy | no | no |
 | `SEAF_LIBRARY_PASSWORD` | Optional encrypted-library password | environment only if used | no | optional |
-| `SEAF_INGEST_DAYS` | Per-library mtime ingest window | NAS/Windows compose or panel settings | no | yes |
-| `SEAF_IGNORE_DIRS` | Optional comma-separated ignored source directory names | environment; default skips `@eaDir` | no | optional |
-| `SEAF_SOURCE_PATH` | Human-readable NAS source path in status | NAS compose | no | yes |
 | `SEAF_SETTINGS_URL` | Panel settings endpoint for NAS agent | NAS/Windows compose | no | yes |
 | `SEAF_STATUS_TOKEN` | NAS agent status token | NAS/Windows env | no | yes |
 | `SEAF_UPLOAD_LIMIT` | Optional seaf-cli upload speed cap | environment only if used | no | optional |
@@ -401,8 +435,8 @@ Real deployment path:
 - CI workflow `nas-settings image`: `.github/workflows/nas-settings-image.yml`; runs pyflakes and `seafile-server/nas-settings/test_app.py`, then publishes `ghcr.io/u2giants/seafile:nas-settings-latest` and `ghcr.io/u2giants/seafile:nas-settings-sha-<commit>`.
 - Deploy trigger: manual pull/recreate on the target host after CI succeeds. There is no Coolify, deploy webhook, or app/project ID.
 - VPS stack: Docker Compose from `/opt/seafile` plus repo files in `/home/ai/seafile-repo/seafile-server/`.
-- `nas-settings` deploy: pull/recreate `nas-settings` from `seafile-server/nas-settings.yml`; do not build on the VPS.
-- NAS deploy: operator SSHes to `edgesynology1`, stages `/tmp/seaf-cli-compose.yml` and `/tmp/.env` if needed, pulls `ghcr.io/u2giants/seafile:seaf-cli-latest`, then runs Docker Compose with `/var/packages/ContainerManager/target/usr/bin/docker`.
+- `nas-settings` deploy: from `/opt/seafile`, run compose with `--env-file /opt/seafile/.env -f /home/ai/seafile-repo/seafile-server/nas-settings.yml`; do not build on the VPS.
+- NAS deploy: SSH from the VPS with `ssh edge1`, stage the current `synology-seaf-cli/docker-compose.yml` as `/tmp/seaf-cli-compose-codex.yml` or another verified current path, rebuild `/tmp/.env` from the running `seaf-cli` container if needed, pull `ghcr.io/u2giants/seafile:seaf-cli-latest`, then run Docker Compose with `sudo -n /var/packages/ContainerManager/target/usr/bin/docker`.
 - Rollback: pin the affected service image to an older immutable `sha-<commit>` or `nas-settings-sha-<commit>` tag and recreate.
 - Runtime environment variable values live in `/opt/seafile/.env` on the VPS and `/tmp/.env` on the NAS. `/tmp` is wiped on NAS reboot; running containers survive via Docker restart policy, but recreates may need restaging.
 - SSH is allowed for manual operator work on VPS/NAS. SSH is not a CI deployment path; GitHub Actions must not SSH to production or run Docker there.
@@ -483,8 +517,6 @@ Back up DB/config before destructive account or ownership changes; keep secrets 
 
 | Status | Item | Owner/next action |
 |---|---|---|
-| open | Recreate Synology `seaf-cli` containers with the latest image | Operator with SSH access to `edgesynology1`; needed for new NAS-agent features such as cached folder-size reporting and any image-side schedule changes |
-| open | Verify cached folder-size data appears in the Libraries page | After NAS recreate, click Refresh sizes or wait for nightly scan after 2 AM New York time; confirm `folder_size_cache` appears in `/data/status.json` |
 | open | Decide read-write sharing policy for all users | In GUI, create/use an all-users group and share both NAS libraries read-write; internal public shares are currently read-only |
 | open | Onboard POP Creations staff | Users sign in with Microsoft SSO; add them to the read-write group/share policy |
 | optional | Move NAS compose/env staging out of `/tmp` | Use a persistent NAS path such as `/volume1/docker/seaf-cli/` if an operator wants easier recreates |

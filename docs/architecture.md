@@ -75,41 +75,40 @@ Seahub session cache. No persistence configured — acceptable for a cache. Rest
 ### nas-settings
 Image: `ghcr.io/u2giants/seafile:nas-settings-latest` (CI-built + published from `seafile-server/nas-settings/`)
 
-Flask app that gives the Seafile web UI a GUI for the seaf-cli client at `/nas-settings/`: a live status Dashboard plus Controls (pause/resume/restart/stop), Config (any `seaf-cli config` key), Libraries (list/list-remote/create/desync plus cached NAS folder sizes), and ingest-window/sync-schedule Settings. Auth delegates to Seafile: the app reads the browser's `seahub_auth` cookie and calls Seafile's admin API with token auth to verify the user is a system admin — no separate credentials. Persists state to a named Docker volume (`nas-settings-data`). Managed by `nas-settings.yml`, deployed separately from the main stack (not in `COMPOSE_FILE`).
+Flask app that gives the Seafile web UI a GUI for the seaf-cli client at `/nas-settings/`: a live status Dashboard plus Controls (pause/resume/restart/stop), Config (any `seaf-cli config` key), Libraries (list/list-remote/create/desync plus cached NAS folder sizes), and ingest-window/sync-schedule Settings. The schedule model has separate weekday and weekend windows per library, with a shared timezone and overnight-window support. Auth delegates to Seafile: the app reads the browser's `seahub_auth` cookie and calls Seafile's admin API with token auth to verify the user is a system admin — no separate credentials. Persists state to a named Docker volume (`nas-settings-data`). Managed by `nas-settings.yml`, deployed separately from the main stack (not in `COMPOSE_FILE`).
 
-**Control loop (server → NAS).** The VPS cannot reach the NAS, so it never pushes. Each seaf-cli container's status reporter POSTs to `/api/status` every 30 s (authenticated by `SEAF_STATUS_TOKEN`); the panel persists the report and hands back the next queued command in the response. The container executes it (daemon RPC for pause/resume, otherwise `seaf-cli`) and reports the result on its next POST. Commands are routed by **library UUID**, not the container's ephemeral hostname. Destructive verbs (desync/create/reinit) require explicit confirmation.
+**Control loop (server → NAS).** The VPS cannot reach the NAS, so it never pushes. The single NAS `seaf-cli` container POSTs one `/api/status` heartbeat per configured library UUID every 30 s (authenticated by `SEAF_STATUS_TOKEN`); the panel persists each report and hands back the next queued command for that UUID. If no command is queued, the response carries the current schedule for that library. The container executes commands (daemon RPC for pause/resume, otherwise `seaf-cli`) and reports the result on that library's next POST. Schedule enforcement toggles the targeted repo's `auto-sync` property. Commands are routed by **library UUID**, not the container's ephemeral Docker hostname or legacy single-library `SEAF_LIBRARY`. Destructive verbs (desync/create/reinit) require explicit confirmation.
 
 ## seaf-cli Sync Architecture
 
-Two seaf-cli containers run one per library. The image is `ghcr.io/u2giants/seafile:seaf-cli-latest` — a wrapper built on `flrnnc/seafile-client` from this repo's `synology-seaf-cli/` directory.
+One NAS `seaf-cli` container syncs all live NAS libraries. The image is `ghcr.io/u2giants/seafile:seaf-cli-latest` — a wrapper built on `flrnnc/seafile-client` from this repo's `synology-seaf-cli/` directory.
 
-Each container follows this flow on startup and hourly:
+The NAS compose file bind-mounts each source folder directly under `/library/<key>`:
 
 ```
-/source (source files, read-only)
-    │  On NAS:      bind mount from /volume1/mac/Decor/…
-    │  On Windows:  CIFS named volume from //edgesynology1/mac/Decor/… over LAN
+/library/char    ← /volume1/mac/Decor/Character Licensed
+/library/decor   ← /volume1/mac/Decor/Generic Decor
+/library/guides  ← /volume1/styleguides
+```
+
+`entrypoint.py` discovers `SEAF_LIBRARY_<KEY>` variables, lowercases each key, and syncs that UUID to `/library/<key>`. The old `SEAF_LIBRARY` single-library mode still exists for compatibility, but if it is set the multi-library variables are intentionally ignored.
+
+Startup flow:
+
+```
+/library/<key> (NAS bind mount, read-write)
     │
-    ▼ seaf-entrypoint.py
-    │  – selects files by mtime (SEAF_INGEST_DAYS) in one os.scandir pass
-    │  – skips Synology metadata directories such as @eaDir by default
-    │  – hardlinks qualifying files into /library staging volume
-    │    (copy2 fallback only if /source and /library are on different filesystems)
-    │  – removes stale files from /library
-    │  – starts hourly refresh thread (kept alive by subprocess.run below)
-    ▼
-/library (Docker named volume — staging)
-    │
-    ▼ entrypoint.py (fixed version, baked into wrapper image)
-    │  – starts seaf-daemon
-    │  – syncs /library to Seafile server via seaf-cli
-    │  – watchdog loop: exits code 1 if seaf-daemon dies
+    ▼ entrypoint.py
+    │  – starts seaf-daemon in /seafile
+    │  – writes .seafile-ignore into each target if missing
+    │  – registers each /library/<key> path with seaf-cli
+    │  – before retrying an unsynced repo, clears only failed clone.db tasks for that repo
     │  – reports live status and can enforce sync schedules / scan cached folder sizes
-    ▼
-Seafile → S3
+    │
+    ▼ Seafile → S3
 ```
 
-`seaf-entrypoint.py` reads per-library `ingest_days` from `https://seafile.designflow.app/nas-settings/api/settings` on startup and on each hourly refresh; falls back to `SEAF_INGEST_DAYS` from the environment if the fetch fails. `entrypoint.py` receives the current sync schedule on the 30-second status heartbeat, toggles each repo's `auto-sync` property, and can build a cached recursive folder-size table nightly after 2 AM New York time or on command.
+`entrypoint.py` receives the current sync schedule on the 30-second status heartbeat, evaluates weekday and weekend windows in the configured timezone, toggles each repo's `auto-sync` property, and can build a cached recursive folder-size table nightly after 2 AM New York time or on command. The `.seafile-ignore` file suppresses Synology metadata and common temp files in the synced library paths.
 
 ### Deployment options
 
@@ -117,11 +116,11 @@ Seafile → S3
 |---|---|---|
 | Source mount | Local bind mount | CIFS named volume over LAN SMB |
 | CPU load | Runs on the NAS | Offloaded to Windows machine |
-| Setup | NAS MCP base64 commands | `setup.ps1` run once as Administrator |
-| seaf-entrypoint.py | Identical | Identical |
+| Setup | SSH from VPS with `ssh edge1`, then Synology Docker path | `setup.ps1` run once as Administrator |
+| entrypoint.py | Identical image | Identical image |
 | Docker image | Identical | Identical |
 
-Only one deployment should be active at a time. To cut over: start the new deployment, verify both containers healthy, then stop the old deployment.
+Only one deployment should be active at a time. The NAS deployment is the verified live path. The Windows workstation compose still reflects the older CIFS/per-library layout; validate it against the current wrapper before any cutover.
 
 ### Process Supervision
 
@@ -129,10 +128,10 @@ The wrapper image uses `tini` as PID 1, which reaps zombie processes and correct
 
 ```
 tini (PID 1)
-  └── seaf-entrypoint.py
-        ├── refresh_loop thread (hourly re-populate /library)
-        └── entrypoint.py [subprocess]
-              └── seaf-daemon
+  └── python3 /home/seafile/entrypoint.py
+        ├── status reporter thread (optional, every 30 s)
+        ├── folder-size scheduler thread
+        └── seaf-daemon
 ```
 
 **Why this matters:** Prior to this wrapper image, the upstream `flrnnc/seafile-client` had three confirmed bugs that caused silent failures in production:
@@ -142,8 +141,6 @@ tini (PID 1)
 2. **No restart on daemon death** — `entrypoint.py` used `follow()` which ran `tail -f logfile`. When seaf-daemon died, sync stopped silently. The fixed `entrypoint.py` uses a `watch()` loop that polls `seaf-daemon`'s PID every 10 seconds and calls `sys.exit(1)` when it dies, triggering Docker's `restart: unless-stopped` policy.
 
 3. **Healthcheck always reported healthy** — `healthcheck()` returned `None` (missing `return` statement), which `sys.exit(None)` treats as exit code 0. The fixed version returns `0 if healthy else 1`.
-
-**Why `seaf-entrypoint.py` uses `subprocess.run` instead of `os.execv`:** The original design used `os.execv` to hand off to `entrypoint.py`, which replaces the process image and kills all threads — including the hourly `refresh_loop` thread. With `os.execv`, the ingest window never slid forward between restarts. Using `subprocess.run` keeps `seaf-entrypoint.py` alive as the parent, so the refresh thread runs every hour as intended.
 
 ## Storage Architecture
 
@@ -190,6 +187,24 @@ Seafile requires these to be **separate buckets** — it will refuse to start if
 Docker volumes:
   nas-settings-data              NAS panel state (/data/settings.json, status.json, commands.json, results.json)
 ```
+
+`/data/settings.json` stores each library's `ingest_days` value and schedule. Current
+schedules are normalized to:
+
+```json
+{
+  "enabled": true,
+  "timezone": "America/New_York",
+  "windows": {
+    "weekdays": {"enabled": true, "days": [0, 1, 2, 3, 4], "start": "19:00", "end": "07:00"},
+    "weekends": {"enabled": false, "days": [5, 6], "start": "09:00", "end": "17:00"}
+  }
+}
+```
+
+Day numbers follow Python's `weekday()` convention: Monday is `0`, Sunday is `6`.
+The NAS agent still accepts the older one-window `{days,start,end}` shape for
+backward compatibility, but the panel writes the `windows` shape.
 
 ## Networking
 

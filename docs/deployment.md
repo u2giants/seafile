@@ -1,5 +1,21 @@
 # Deployment
 
+## Verify Live VPS
+
+The live Seafile VPS is `172.233.14.233` and currently identifies as `seafile-br`.
+Other hosts may have stale `/worksp/seafile` clones but no running Seafile stack.
+Before a deploy, verify the target:
+
+```bash
+hostname
+ls -la /opt/seafile
+docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' | grep -E 'seafile|caddy|nas-settings'
+```
+
+Expected containers include `seafile`, `seafile-mysql`, `seafile-redis`,
+`seafile-caddy`, and `nas-settings`. If those are absent, stop; it is not the
+live VPS.
+
 ## Start / Stop / Restart
 
 All commands from `/opt/seafile/` as root.
@@ -36,28 +52,52 @@ When anything under `seafile-server/nas-settings/` changes:
 3. Pull and recreate on the VPS:
 
 ```bash
-cd /opt/seafile && docker compose \
-  -f seafile-server.yml -f caddy.yml \
+cd /opt/seafile
+
+docker compose \
+  --env-file /opt/seafile/.env \
   -f /home/ai/seafile-repo/seafile-server/nas-settings.yml \
-  pull nas-settings && docker compose \
-  -f seafile-server.yml -f caddy.yml \
+  pull nas-settings
+
+docker compose \
+  --env-file /opt/seafile/.env \
   -f /home/ai/seafile-repo/seafile-server/nas-settings.yml \
-  up -d nas-settings
+  up -d --force-recreate nas-settings
+
+docker logs --tail 80 nas-settings
 ```
+
+Healthy logs include repeated `POST /api/status HTTP/1.1" 200` entries from the
+NAS status reporter. After the 2026-06-16 multi-library heartbeat fix, three
+POSTs roughly every 30 seconds are expected: one per synced library.
 
 **Rollback:** pin `image:` in `nas-settings.yml` to a prior `ghcr.io/u2giants/seafile:nas-settings-sha-<older-commit>` and `up -d` — never rebuild on the host.
 
 **Note:** Seahub template overrides (`seafile-server/custom-templates/`) are *not* part of this image — they deploy by copying into the Seahub custom dir + `docker restart seafile` (see `custom-templates/README.md`).
 
-## seaf-cli Containers
+## seaf-cli Container
 
-The seaf-cli containers use `ghcr.io/u2giants/seafile:seaf-cli-latest`. They can run on the NAS or on the Windows workstation — see `docs/architecture.md` for the comparison. Both deployments use the same image and the same `docker-compose.yml` structure; only the source volume type differs.
+The seaf-cli container uses `ghcr.io/u2giants/seafile:seaf-cli-latest`. It can run on the NAS or on the Windows workstation — see `docs/architecture.md` for the comparison. Both deployments use the same image; only the source volume type differs.
 
 Currently running on: **NAS (edgesynology1)**.
 
 ### NAS deployment
 
-NAS deploys/recreates are done by an operator over SSH on `edgesynology1`. Docker is not in PATH on Synology; use `/var/packages/ContainerManager/target/usr/bin/docker`. The NAS MCP is useful for read-only diagnosis only; it cannot run `docker pull`, `compose up`, `start`, or `--force-recreate`.
+NAS deploys/recreates are done from the VPS over SSH:
+
+```bash
+ssh edge1
+```
+
+That logs in to `edgesynology1` as `ai`. Docker is not in PATH on Synology; use `/var/packages/ContainerManager/target/usr/bin/docker`. The `ai` account has passwordless sudo only for that Docker binary.
+
+Do not reuse an old `/tmp/seaf-cli-compose.yml` blindly. A stale two-service compose file has existed on the NAS; stage the current repo file and verify it before `up`:
+
+```bash
+DOCKER=/var/packages/ContainerManager/target/usr/bin/docker
+sudo -n $DOCKER compose -f /tmp/seaf-cli-compose-codex.yml --env-file /tmp/.env config --services
+# expected: seaf-cli
+```
 
 ### Release a code change to seaf-cli
 
@@ -70,14 +110,21 @@ When `synology-seaf-cli/Dockerfile`, `entrypoint.py`, or `seaf-entrypoint.py` ch
 ```bash
 DOCKER=/var/packages/ContainerManager/target/usr/bin/docker
 
-# Rebuild /tmp/.env from a running container's env if needed; this avoids typing secrets.
-sudo $DOCKER inspect seaf-cli-char-licensed \
+# Rebuild /tmp/.env from the running container's env if needed; this avoids typing secrets.
+sudo -n $DOCKER inspect seaf-cli \
   --format '{{range .Config.Env}}{{println .}}{{end}}' \
-  | grep -E '^(SEAF_USERNAME|SEAF_PASSWORD|SEAF_STATUS_TOKEN)=' | sudo tee /tmp/.env >/dev/null
+  | grep -E '^(SEAF_USERNAME|SEAF_PASSWORD|SEAF_STATUS_TOKEN)=' | sudo -n tee /tmp/.env >/dev/null
 
-# If /tmp/seaf-cli-compose.yml is missing, stage synology-seaf-cli/docker-compose.yml there first.
-sudo $DOCKER pull ghcr.io/u2giants/seafile:seaf-cli-latest
-sudo $DOCKER compose -f /tmp/seaf-cli-compose.yml --env-file /tmp/.env up -d --force-recreate
+# Stage the current synology-seaf-cli/docker-compose.yml as /tmp/seaf-cli-compose-codex.yml first.
+sudo -n $DOCKER pull ghcr.io/u2giants/seafile:seaf-cli-latest
+sudo -n $DOCKER compose -f /tmp/seaf-cli-compose-codex.yml --env-file /tmp/.env up -d
+```
+
+If Compose fails because the existing `/seaf-cli` container name is already in use, remove only that container and run `up -d` again. The named `seaf-cli-data` volume preserves sync state:
+
+```bash
+sudo -n $DOCKER rm -f seaf-cli
+sudo -n $DOCKER compose -f /tmp/seaf-cli-compose-codex.yml --env-file /tmp/.env up -d
 ```
 
 ### Release a compose-only change
@@ -85,14 +132,16 @@ sudo $DOCKER compose -f /tmp/seaf-cli-compose.yml --env-file /tmp/.env up -d --f
 When only `synology-seaf-cli/docker-compose.yml` changes (environment, volumes — no image rebuild needed):
 
 1. Commit to `main` and push
-2. Write the updated compose file to `/tmp/seaf-cli-compose.yml` on `edgesynology1`
-3. Recreate containers over SSH:
+2. Write the updated compose file to `/tmp/seaf-cli-compose-codex.yml` on `edgesynology1`
+3. Recreate the container over SSH:
 ```bash
 DOCKER=/var/packages/ContainerManager/target/usr/bin/docker
-sudo $DOCKER compose -f /tmp/seaf-cli-compose.yml --env-file /tmp/.env up -d
+sudo -n $DOCKER compose -f /tmp/seaf-cli-compose-codex.yml --env-file /tmp/.env up -d
 ```
 
 ### Windows workstation deployment
+
+The Windows compose still reflects the older per-library/CIFS layout and was not validated during the 2026-06-11 NAS recovery. Treat this cutover as a separate migration: inspect `windows-workstation/docker-compose.yml` against the current `synology-seaf-cli/entrypoint.py` before stopping the NAS container.
 
 Prerequisites on the Windows machine: WSL2 enabled, Docker Desktop installed with "Start Docker Desktop when you log in" enabled.
 
@@ -104,11 +153,11 @@ Prerequisites on the Windows machine: WSL2 enabled, Docker Desktop installed wit
 `setup.ps1` installs the PopDAM Windows Agent (downloads from GitHub releases if not already present), writes `.env` credentials, starts the seaf-cli containers, and registers a login-triggered scheduled task.
 
 **Cutover procedure (switching from NAS to Windows):**
-1. Run `setup.ps1` on the Windows machine and verify `docker ps` shows both containers healthy
-2. Stop the NAS containers over SSH on `edgesynology1`:
+1. Run `setup.ps1` on the Windows machine and verify `docker ps` shows the seaf-cli containers healthy
+2. Stop the NAS container over SSH on `edgesynology1`:
 ```bash
 DOCKER=/var/packages/ContainerManager/target/usr/bin/docker
-sudo $DOCKER compose -f /tmp/seaf-cli-compose.yml --env-file /tmp/.env stop
+sudo -n $DOCKER compose -f /tmp/seaf-cli-compose-codex.yml --env-file /tmp/.env stop
 ```
 
 **Machine replacement:** Copy the `windows-workstation/` folder to the new machine, run `setup.ps1`. Sync state rebuilds from scratch (seaf-daemon re-hashes all files on first start — expect 200-300% CPU for several hours).
@@ -198,13 +247,14 @@ If renewal fails: verify DNS still resolves correctly and port 80 is reachable (
 
 ## Remaining Work
 
-> Live state and the authoritative pending list are in `AGENTS.md` → Pending work (and `HANDOFF.md` while present). As of 2026-06-09 both NAS seaf-cli containers are reporting heartbeats to `nas-settings`, but the NAS-side containers still need a recreate to pick up the newest image features.
+> Live state and the authoritative pending list are in `AGENTS.md` → Pending work. As of 2026-06-16 the NAS `seaf-cli` container has been recreated on the current image, is healthy, and the recreated `nas-settings` container is receiving three per-library status POSTs roughly every 30 seconds.
 
-### Pick up the latest NAS-agent image
-The latest published image includes schedule enforcement and cached folder-size reporting. If the running status payload lacks fields such as `folder_size_cache`, recreate the containers on `edgesynology1` (see `synology-seaf-cli/README.md` / `HANDOFF.md`). `/tmp` is wiped on reboot, so `/tmp/seaf-cli-compose.yml` + `/tmp/.env` usually need re-staging first.
+### NAS-agent image already picked up
+
+The 2026-06-11 recreate pulled `ghcr.io/u2giants/seafile:seaf-cli-latest` and started the single `seaf-cli` service from current compose. If a future status payload lacks fields such as `folder_size_cache`, or if `@eaDir` folders still appear in Seafile after a refresh, first verify the running image digest and that the active compose config contains only the `seaf-cli` service. `/tmp` is wiped on reboot, so `/tmp/seaf-cli-compose-codex.yml` and `/tmp/.env` may need re-staging before a future recreate.
 
 ### Windows workstation cutover (optional)
-`windows-workstation/setup.ps1` is ready. Run it on the Windows rendering machine to move the seaf-cli upload work off the NAS. See Windows workstation deployment above. Only one host may run seaf-cli at a time.
+`windows-workstation/setup.ps1` exists but the cutover was not validated against the current single-container NAS sync model. Review the Windows compose/runtime path first. Only one host may run seaf-cli for a library at a time.
 
 ### Designer user accounts
 Send designers `https://seafile.designflow.app` — accounts are created automatically on first M365 SSO login (requires a POP Creations Microsoft account in the tenant). Albert then shares the relevant libraries via the web UI.

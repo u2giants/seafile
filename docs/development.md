@@ -55,24 +55,23 @@ curl -s https://seafile.designflow.app/nas-settings/api/settings | python3 -m js
 
 ## NAS seaf-cli Container Debugging
 
-All docker commands on edgesynology1 must be base64-encoded via NAS MCP (target: edgesynology1).
+From the VPS, debug the live Synology container over SSH:
 
 ```bash
-# Check container status (both containers)
-CMD="/var/packages/ContainerManager/target/usr/bin/docker ps --filter name=seaf-cli"
-echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
+ssh edge1
+DOCKER=/var/packages/ContainerManager/target/usr/bin/docker
+
+# Check container status
+sudo -n $DOCKER ps --filter name=seaf-cli
 
 # Tail logs from a container
-CMD="docker logs --tail 100 seaf-cli-char-licensed"
-echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
+sudo -n $DOCKER logs --tail 100 seaf-cli
 
 # Check health check status
-CMD="docker inspect --format='{{.State.Health.Status}} {{.State.Health.FailingStreak}}' seaf-cli-char-licensed"
-echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
+sudo -n $DOCKER inspect --format='{{.State.Health.Status}} {{.State.Health.FailingStreak}}' seaf-cli
 
 # Check process tree inside a container (verify tini + seaf-daemon running)
-CMD="docker top seaf-cli-char-licensed"
-echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
+sudo -n $DOCKER top seaf-cli
 ```
 
 ### What healthy looks like
@@ -80,17 +79,16 @@ echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
 Container `docker top` should show approximately:
 ```
 tini
-  └── python3 /home/seafile/seaf-entrypoint.py   ← Stage 1 (alive, owns refresh thread)
-        └── python3 /home/seafile/entrypoint.py   ← Stage 2
-              └── seaf-daemon                      ← sync daemon
+  └── python3 /home/seafile/entrypoint.py
+        └── seaf-daemon
 ```
 
 Log output should cycle through:
 ```
-seaf-entrypoint  Ingest window: 730 days — N qualifying files
-seaf-entrypoint  Library ready — N files updated
-[upstream]       Monitoring seaf-daemon (PID N)
-[upstream]       synchronized
+Initializing `seaf-cli`.
+Starting `seaf-cli`.
+Library <name> is already synced.
+Monitoring seaf-daemon (PID N)
 ```
 
 ### What unhealthy looks like
@@ -98,13 +96,13 @@ seaf-entrypoint  Library ready — N files updated
 - `seaf-daemon` absent from `docker top` but container still running → watchdog hasn't fired yet (10s poll) or restart loop
 - Container restarting frequently → seaf-daemon dying; check network reachability to `seafile.designflow.app`
 - Health check `unhealthy` → RPC socket not responding; seaf-daemon may be starting up or crashed
-- No hourly refresh in logs → `seaf-entrypoint.py` exited before its refresh thread fired (shouldn't happen with current wrapper)
+- A healthcheck line like `error Library cannot be synced since it has too many files` → verify `/opt/seafile-data/seafile/conf/seafile.conf` on the VPS still has the raised fileserver limits, then restart Seafile if changed
+- `Task is already in progress` immediately after fixing a failed initial clone → current images clear failed clone tasks from `/seafile/seafile-data/clone.db` before retrying; verify the image is current before manually editing the DB
 
 ### If a container is stuck or needs a forced restart
 
 ```bash
-CMD="docker restart seaf-cli-char-licensed"
-echo "$CMD" | base64 | xargs -I{} bash -c 'echo {} | base64 -d | bash'
+sudo -n $DOCKER restart seaf-cli
 ```
 
 ## Windows Workstation seaf-cli Container Debugging
