@@ -64,6 +64,11 @@ LIBRARIES = [
         "name": "Generic Decor",
         "uuid": "1b116ab7-d66b-4411-a691-21f34eadb731",
     },
+    {
+        "id": "seaf-cli-style-guides",
+        "name": "Style Guides",
+        "uuid": "b6e1d4c9-434e-4d8a-bde2-7f19be9c0838",
+    },
 ]
 
 SETTINGS_PATH = Path("/data/settings.json")

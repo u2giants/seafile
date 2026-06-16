@@ -336,7 +336,25 @@ class Client:
                 sys.exit(1)
             time.sleep(WATCHDOG_INTERVAL_SECONDS)
 
-    def _collect_status(self) -> dict:
+    def _library_targets(self) -> list[tuple[str, str]]:
+        """Return (name, uuid) pairs that should report status."""
+        targets = [
+            (name, config.get("uuid", ""))
+            for name, config in self.libraries.items()
+            if config.get("uuid")
+        ]
+        if targets:
+            return targets
+        uuid = os.environ.get("SEAF_LIBRARY", "")
+        return [("_", uuid)] if uuid else []
+
+    def _repos_for_library(self, library_uuid: str | None):
+        repos = self.rpc.get_repo_list(-1, -1)
+        if not library_uuid:
+            return repos
+        return [repo for repo in repos if getattr(repo, "id", "") == library_uuid]
+
+    def _collect_status(self, library_uuid: str | None = None) -> dict:
         """Gather current sync state for reporting to the nas-settings panel."""
         pid = self._daemon_pid()
         daemon_alive = False
@@ -350,7 +368,7 @@ class Client:
         repos = []
         if hasattr(self, "rpc"):
             try:
-                rpc_repos = self.rpc.get_repo_list(-1, -1)
+                rpc_repos = self._repos_for_library(library_uuid)
                 auto_sync = self.rpc.is_auto_sync_enabled()
                 for repo in rpc_repos:
                     entry: dict = {
@@ -398,7 +416,7 @@ class Client:
         paused = False
         if hasattr(self, "rpc"):
             try:
-                rl = self.rpc.get_repo_list(-1, -1)
+                rl = self._repos_for_library(library_uuid)
                 if rl:
                     paused = all(not r.auto_sync for r in rl)
             except Exception:
@@ -409,7 +427,7 @@ class Client:
         local_repos = []
         if hasattr(self, "rpc"):
             try:
-                for repo in self.rpc.get_repo_list(-1, -1):
+                for repo in self._repos_for_library(library_uuid):
                     local_repos.append({
                         "name": repo.name,
                         "id": repo.id,
@@ -428,7 +446,7 @@ class Client:
 
         return {
             "container_id": os.environ.get("HOSTNAME", "unknown"),
-            "library_uuid": os.environ.get("SEAF_LIBRARY", ""),
+            "library_uuid": library_uuid or os.environ.get("SEAF_LIBRARY", ""),
             "reported_at": datetime.datetime.utcnow().isoformat() + "Z",
             "daemon_pid": pid,
             "daemon_alive": daemon_alive,
@@ -702,11 +720,11 @@ class Client:
             "end": schedule.get("end", "23:59"),
         })
 
-    def _apply_schedule(self, schedule: dict | None) -> None:
+    def _apply_schedule(self, schedule: dict | None, library_uuid: str | None = None) -> None:
         if not hasattr(self, "rpc"):
             return
         value = "true" if self._schedule_allows_sync(schedule) else "false"
-        for repo in self.rpc.get_repo_list(-1, -1):
+        for repo in self._repos_for_library(library_uuid):
             if str(repo.auto_sync).lower() != value:
                 self.rpc.set_repo_property(repo.id, "auto-sync", value)
 
@@ -727,7 +745,7 @@ class Client:
                 if not hasattr(self, "rpc"):
                     raise RuntimeError("daemon not running")
                 value = "false" if verb == "pause" else "true"
-                repos = self.rpc.get_repo_list(-1, -1)
+                repos = self._repos_for_library(command.get("library_uuid"))
                 if not repos:
                     raise RuntimeError("no synced library yet")
                 for repo in repos:
@@ -820,35 +838,40 @@ class Client:
         """Start a daemon thread that POSTs sync status every 30 s, carries back
         any command results, and executes the next queued command."""
         status_url = settings_url.rstrip("/").rsplit("/api/settings", 1)[0] + "/api/status"
-        self._pending_results: list[dict] = []
+        self._pending_results: dict[str, list[dict]] = {}
         self._config_cache = None
 
         def _loop() -> None:
             while True:
-                try:
-                    payload_obj = self._collect_status()
-                    if self._pending_results:
-                        payload_obj["command_results"] = self._pending_results
-                    payload = json.dumps(payload_obj).encode()
-                    headers = {"Content-Type": "application/json"}
-                    if token:
-                        headers["X-Status-Token"] = token
-                    req = urllib.request.Request(
-                        status_url, data=payload, headers=headers, method="POST"
-                    )
-                    with urllib.request.urlopen(req, timeout=10) as resp:
-                        body = json.loads(resp.read().decode())
-                    # Results were delivered with this POST — clear them.
-                    self._pending_results = []
-                    command = body.get("command")
-                    if command:
-                        logger.info("Executing queued command: %s",
-                                    command.get("verb"))
-                        self._pending_results.append(self._dispatch_command(command))
-                    elif "schedule" in body:
-                        self._apply_schedule(body.get("schedule"))
-                except Exception:
-                    pass  # best-effort; never crash the container
+                for _name, uuid in self._library_targets():
+                    try:
+                        payload_obj = self._collect_status(uuid)
+                        pending = self._pending_results.get(uuid, [])
+                        if pending:
+                            payload_obj["command_results"] = pending
+                        payload = json.dumps(payload_obj).encode()
+                        headers = {"Content-Type": "application/json"}
+                        if token:
+                            headers["X-Status-Token"] = token
+                        req = urllib.request.Request(
+                            status_url, data=payload, headers=headers, method="POST"
+                        )
+                        with urllib.request.urlopen(req, timeout=10) as resp:
+                            body = json.loads(resp.read().decode())
+                        # Results were delivered with this POST — clear them.
+                        self._pending_results[uuid] = []
+                        command = body.get("command")
+                        if command:
+                            logger.info("Executing queued command for %s: %s",
+                                        uuid, command.get("verb"))
+                            command["library_uuid"] = uuid
+                            self._pending_results.setdefault(uuid, []).append(
+                                self._dispatch_command(command)
+                            )
+                        elif "schedule" in body:
+                            self._apply_schedule(body.get("schedule"), uuid)
+                    except Exception:
+                        pass  # best-effort; never crash the container
                 time.sleep(STATUS_REPORT_INTERVAL_SECONDS)
 
         threading.Thread(target=_loop, daemon=True, name="status-reporter").start()

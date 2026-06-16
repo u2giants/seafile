@@ -41,10 +41,18 @@ c._run_seaf = fake_run
 c._refresh_config_cache = lambda: setattr(c, "_config_cache", {})
 
 class FakeRepo:
-    def __init__(self, rid): self.id = rid; self.name = "lib"; self.auto_sync = 1
+    def __init__(self, rid):
+        self.id = rid
+        self.name = "lib"
+        self.auto_sync = 1
+        self.worktree = f"/library/{rid}"
 class FakeRpc:
-    def __init__(self): self.props = {}; self._repos = [FakeRepo("repo1")]
+    def __init__(self):
+        self.props = {}
+        self._repos = [FakeRepo("repo1"), FakeRepo("repo2")]
     def get_repo_list(self, a, b): return self._repos
+    def is_auto_sync_enabled(self): return True
+    def get_repo_sync_task(self, rid): return None
     def set_repo_property(self, rid, key, value): self.props[(rid, key)] = value
 c.rpc = FakeRpc()
 
@@ -53,9 +61,24 @@ def disp(verb, args=None):
     return c._dispatch_command({"id": "cmd1", "verb": verb, "args": args or {}})
 
 check("pause -> set auto-sync false",
-      disp("pause")["ok"] and c.rpc.props[("repo1", "auto-sync")] == "false")
+      disp("pause")["ok"]
+      and c.rpc.props[("repo1", "auto-sync")] == "false"
+      and c.rpc.props[("repo2", "auto-sync")] == "false")
 check("resume -> set auto-sync true",
-      disp("resume")["ok"] and c.rpc.props[("repo1", "auto-sync")] == "true")
+      disp("resume")["ok"]
+      and c.rpc.props[("repo1", "auto-sync")] == "true"
+      and c.rpc.props[("repo2", "auto-sync")] == "true")
+calls.clear()
+targeted = c._dispatch_command({
+    "id": "cmd1",
+    "verb": "pause",
+    "args": {},
+    "library_uuid": "repo2",
+})
+check("targeted pause only affects matching repo",
+      targeted["ok"]
+      and c.rpc.props[("repo2", "auto-sync")] == "false"
+      and c.rpc.props[("repo1", "auto-sync")] == "true")
 check("config_set -> config -k -v",
       disp("config_set", {"key": "upload_limit", "value": 1024})["ok"]
       and calls == [["config", "-k", "upload_limit", "-v", "1024"]])
@@ -92,6 +115,18 @@ check("all disabled schedule windows block sync",
 c._apply_schedule({"enabled": True, "days": [], "start": "00:00", "end": "23:59", "timezone": "UTC"})
 check("schedule disables repo auto-sync",
       c.rpc.props[("repo1", "auto-sync")] == "false")
+
+c.libraries = {
+    "char": {"uuid": "repo1"},
+    "decor": {"uuid": "repo2"},
+}
+check("multi-library env produces per-library status targets",
+      c._library_targets() == [("char", "repo1"), ("decor", "repo2")])
+c._config_cache = {}
+status = c._collect_status("repo2")
+check("status report is keyed to requested library uuid",
+      status["library_uuid"] == "repo2"
+      and [repo["id"] for repo in status["repos"]] == ["repo2"])
 
 spec = importlib.util.spec_from_file_location(
     "seaf_entrypoint", Path(__file__).with_name("seaf-entrypoint.py")
