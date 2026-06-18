@@ -68,8 +68,8 @@ docker logs --tail 80 nas-settings
 ```
 
 Healthy logs include repeated `POST /api/status HTTP/1.1" 200` entries from the
-NAS status reporter. After the 2026-06-16 multi-library heartbeat fix, three
-POSTs roughly every 30 seconds are expected: one per synced library.
+NAS status reporter. After the 2026-06-16 multi-library heartbeat fix, one POST
+roughly every 30 seconds is expected for each synced library.
 
 **Rollback:** pin `image:` in `nas-settings.yml` to a prior `ghcr.io/u2giants/seafile:nas-settings-sha-<older-commit>` and `up -d` — never rebuild on the host.
 
@@ -247,7 +247,7 @@ If renewal fails: verify DNS still resolves correctly and port 80 is reachable (
 
 ## Remaining Work
 
-> Live state and the authoritative pending list are in `AGENTS.md` → Pending work. As of 2026-06-16 the NAS `seaf-cli` container has been recreated on the current image, is healthy, and the recreated `nas-settings` container is receiving three per-library status POSTs roughly every 30 seconds.
+> Live state and the authoritative pending list are in `AGENTS.md` -> Pending work. As of 2026-06-16 the NAS `seaf-cli` container has been recreated on the current image, is healthy, and the recreated `nas-settings` container is receiving one status POST per synced library roughly every 30 seconds.
 
 ### NAS-agent image already picked up
 

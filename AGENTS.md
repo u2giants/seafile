@@ -142,6 +142,7 @@ No upstream source files are modified in-repo; these are runtime template overri
 | Character Licensed library | `177cf9de-3066-482e-956a-7ae8d8786c6d` | `synology-seaf-cli/docker-compose.yml`, `seafile-server/nas-settings/app.py`, database | NAS path `/volume1/mac/Decor/Character Licensed`; owner is current SSO admin |
 | Generic Decor library | `1b116ab7-d66b-4411-a691-21f34eadb731` | `synology-seaf-cli/docker-compose.yml`, `seafile-server/nas-settings/app.py`, database | NAS path `/volume1/mac/Decor/Generic Decor`; owner is current SSO admin |
 | Styleguides library | `b6e1d4c9-434e-4d8a-bde2-7f19be9c0838` | `synology-seaf-cli/docker-compose.yml` | NAS path `/volume1/styleguides`; synced by the current single NAS `seaf-cli` container |
+| ArtLibrary library | `d28d5118-e991-431a-be3d-2e6a15246479` | `synology-seaf-cli/docker-compose.yml`, `seafile-server/nas-settings/app.py`, database | NAS path `/volume1/mac/Art Library`; synced by the current single NAS `seaf-cli` container |
 | Current internal public shares | `InnerPubRepo.permission = r` for both NAS libraries | `seafile_db.InnerPubRepo` | Means all logged-in users can read. For read-write, use group/user shares with write permission |
 | S3 block bucket | `seafile-s3` | `.env`, `docs/configuration.md` | Linode Object Storage `br-gru-1` |
 | S3 commit bucket | `seafile-s3-commits` | `.env`, `docs/configuration.md` | Must remain distinct |
@@ -162,7 +163,7 @@ Do not casually rename, regenerate, or replace documented identifiers.
 | `seafile-redis` | Redis cache/session support | Docker Compose on VPS | none | `redis` |
 | `seafile-caddy` | Caddy reverse proxy and TLS | Docker Compose on VPS | none | `lucaslorentz/caddy-docker-proxy:2.12-alpine` |
 | `nas-settings` | Flask admin panel and NAS command/status API | Docker Compose on VPS, image from GitHub Actions | none | `ghcr.io/u2giants/seafile:nas-settings-latest` |
-| `seaf-cli` | Syncs Character Licensed, Generic Decor, and Styleguides NAS folders to Seafile | Docker Compose on `edgesynology1` NAS, or Windows alternative when cut over | none | `ghcr.io/u2giants/seafile:seaf-cli-latest` |
+| `seaf-cli` | Syncs Character Licensed, Generic Decor, Styleguides, and ArtLibrary NAS folders to Seafile | Docker Compose on `edgesynology1` NAS, or Windows alternative when cut over | none | `ghcr.io/u2giants/seafile:seaf-cli-latest` |
 
 There is no Coolify, Supabase, deploy app ID, or webhook deploy target for this project.
 

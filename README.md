@@ -51,7 +51,7 @@ docs/
 | Credentials | `/opt/seafile/CREDENTIALS.txt` on the VPS (root-only, never in this repo) |
 | GitHub | https://github.com/u2giants/seafile |
 
-> **Current status (verified 2026-06-16):** VPS server, `nas-settings`, and the Synology `seaf-cli` container are running. The NAS container is healthy and the panel is receiving three per-library status heartbeats from the current image; see `AGENTS.md` for current pending work.
+> **Current status (verified 2026-06-16):** VPS server, `nas-settings`, and the Synology `seaf-cli` container are running. The NAS container is healthy and the panel is receiving one status heartbeat per synced library from the current image; see `AGENTS.md` for current pending work.
 
 ## AI Sessions
 

@@ -32,6 +32,7 @@ services:
       - /volume1/mac/Decor/Character Licensed:/library/char:rw
       - /volume1/mac/Decor/Generic Decor:/library/decor:rw
       - /volume1/styleguides:/library/guides:rw
+      - /volume1/mac/Art Library:/library/art:rw
       - seaf-cli-data:/seafile
     environment:
       - SEAF_SERVER_URL=https://seafile.designflow.app
@@ -40,6 +41,7 @@ services:
       - SEAF_LIBRARY_CHAR=177cf9de-3066-482e-956a-7ae8d8786c6d
       - SEAF_LIBRARY_DECOR=1b116ab7-d66b-4411-a691-21f34eadb731
       - SEAF_LIBRARY_GUIDES=b6e1d4c9-434e-4d8a-bde2-7f19be9c0838
+      - SEAF_LIBRARY_ART=d28d5118-e991-431a-be3d-2e6a15246479
       - SEAF_SETTINGS_URL=https://seafile.designflow.app/nas-settings/api/settings
       - SEAF_STATUS_TOKEN
 

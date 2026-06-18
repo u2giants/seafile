@@ -13,6 +13,7 @@ Syncs folders from the NYC Synology NAS to Seafile Pro at `seafile.designflow.ap
 | `seaf-cli` | `/volume1/mac/Decor/Character Licensed` | `/library/char` | Character Licensed | `177cf9de-3066-482e-956a-7ae8d8786c6d` |
 | `seaf-cli` | `/volume1/mac/Decor/Generic Decor` | `/library/decor` | Generic Decor | `1b116ab7-d66b-4411-a691-21f34eadb731` |
 | `seaf-cli` | `/volume1/styleguides` | `/library/guides` | Styleguides | `b6e1d4c9-434e-4d8a-bde2-7f19be9c0838` |
+| `seaf-cli` | `/volume1/mac/Art Library` | `/library/art` | ArtLibrary | `d28d5118-e991-431a-be3d-2e6a15246479` |
 
 ## Image
 

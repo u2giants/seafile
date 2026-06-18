@@ -70,6 +70,11 @@ LIBRARIES = [
         "name": "Style Guides",
         "uuid": "b6e1d4c9-434e-4d8a-bde2-7f19be9c0838",
     },
+    {
+        "id": "seaf-cli-art-library",
+        "name": "ArtLibrary",
+        "uuid": "d28d5118-e991-431a-be3d-2e6a15246479",
+    },
 ]
 
 SETTINGS_PATH = Path("/data/settings.json")
