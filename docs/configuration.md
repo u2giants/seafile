@@ -130,6 +130,13 @@ Windows workstation compose file, or the host env file used with those compose f
 | `SEAF_SETTINGS_URL` | `nas-settings` `/api/settings` URL for ingest settings and non-secret schedule metadata. |
 | `SEAF_STATUS_TOKEN` | Shared token used when posting status to `/api/status`. |
 | `SEAF_UPLOAD_LIMIT` / `SEAF_DOWNLOAD_LIMIT` | Optional seaf-cli transfer limits in KB/s. |
+| `SEAF_MIN_INOTIFY_WATCHES` | Minimum acceptable Synology host inotify watch limit before the status dashboard reports an anomaly. Default: `1048576`. |
+| `SEAF_INOTIFY_WARN_USAGE` | Fraction of `max_user_watches` at which the wrapper reports high inotify usage. Default: `0.80`. |
+| `SEAF_CANARY_FILENAME` | Per-library production-tree canary filename. Default: `.seafile-sync-canary.json`. |
+| `SEAF_CANARY_INTERVAL_SECONDS` | Minimum time between automatic canary rewrites. Default: `600`. |
+| `SEAF_CANARY_GRACE_SECONDS` | Time allowed for the server to receive a new canary before reporting an anomaly. Default: `180`. |
+| `SEAF_ALERT_WEBHOOK_URL` | Optional webhook for human-visible sync anomaly alerts. Leave unset to only show red status in the dashboard. |
+| `SEAF_ALERT_COOLDOWN_SECONDS` | Minimum seconds between duplicate anomaly alerts. Default: `3600`. |
 
 ---
 

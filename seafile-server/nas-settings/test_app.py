@@ -62,6 +62,10 @@ check("legacy container_id+command accepted", r.status_code == 200)
 
 r = client.post("/api/command", json={"library_uuid": CHAR, "verb": "refresh_folder_sizes"})
 check("folder-size refresh command accepted", r.status_code == 200 and r.get_json().get("ok"))
+r = client.post("/api/command", json={"library_uuid": CHAR, "verb": "verify_now"})
+check("verify_now command accepted", r.status_code == 200 and r.get_json().get("ok"))
+r = client.post("/api/command", json={"library_uuid": CHAR, "verb": "write_canary"})
+check("write_canary command accepted", r.status_code == 200 and r.get_json().get("ok"))
 
 print("== status POST: uuid routing, command handback, result persist ==")
 r = client.post("/api/status", json={"library_uuid": CHAR, "container_id": "abc123",

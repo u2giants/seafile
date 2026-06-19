@@ -27,10 +27,11 @@ The container runs `entrypoint.py` directly under `tini`:
 
 - Starts `seaf-daemon` and registers `/library` as the sync path
 - Discovers each `SEAF_LIBRARY_<KEY>` variable and syncs that UUID to `/library/<key>`
-- Writes `.seafile-ignore` into each library path if missing so Synology metadata and common temp files are ignored
+- Writes/refreshes `seafile-ignore.txt` in each library path so Synology metadata and common temp files are ignored
 - Clears stale failed clone tasks for a repo before retrying `seaf-cli sync`
 - Syncs the mounted folders to the Seafile server continuously
 - Reports status every 30 seconds, executes queued panel commands, and applies the current weekday/weekend schedule by toggling per-repo `auto-sync`
+- Independently verifies each synchronized repo by comparing Seafile commit heads, monitoring inotify health, scanning daemon watch errors, and round-tripping a sync canary file
 - Rebuilds cached recursive source-folder sizes nightly after 2 AM New York time, or immediately when the panel queues `refresh_folder_sizes`
 - Watchdog loop: polls `seaf-daemon`'s PID every 10 seconds; calls `sys.exit(1)` if it dies
 
@@ -104,9 +105,92 @@ and are enforced by toggling the synced repo's `auto-sync` property. Weekday and
 weekend windows are separate; an end time earlier than the start time means the
 window runs overnight.
 
-On first sync registration, the wrapper writes `.seafile-ignore` into each library
-path if the file is missing. That ignore file includes Synology metadata directories
+On each sync startup, the wrapper writes or refreshes `seafile-ignore.txt` in each library path. That ignore file includes Synology metadata directories
 such as `@eaDir` plus common temporary files.
+
+## Independent Sync Verification
+
+The wrapper does not trust `seaf-cli status` by itself. On every status heartbeat,
+if a repo reports `synchronized`, the wrapper also:
+
+1. Compares the local client's synced commit head with the server repo head.
+2. Counts new `fail to add watch` / `No space left on device` daemon log entries.
+3. Reports inotify watch usage and flags undersized host limits.
+4. Periodically writes `.seafile-sync-canary.json` locally and confirms matching
+   size and modification metadata appears on the server after a short grace period.
+
+If any check fails, the wrapper reports `anomaly`, captures diagnostics, and sends
+an optional webhook alert. It does not auto-restart the daemon, because restart runs
+a one-time scan that can hide an inotify failure while leaving the host watch limit
+broken.
+
+### Synology inotify requirement
+
+The NAS host kernel limit must be sized for the synced directory count. The live
+trees were measured on 2026-06-19 at roughly 540k directories:
+
+| Worktree | Directory count |
+|----------|----------------:|
+| `/volume1/mac/Decor/Generic Decor` | 28,103 |
+| `/volume1/mac/Decor/Character Licensed` | 377,815 |
+| `/volume1/mac/Art Library` | 83,851 |
+| `/volume1/styleguides` | 51,320 |
+
+Use at least 2x headroom. The current target is:
+
+```bash
+sysctl -w fs.inotify.max_user_watches=2097152
+sysctl -w fs.inotify.max_user_instances=1024
+```
+
+On Synology, make this persistent with a DSM Task Scheduler boot-up task running
+as root; `/etc/sysctl.conf` is not reliable across DSM updates. After the boot
+task is created, reboot and verify:
+
+```bash
+sysctl fs.inotify.max_user_watches fs.inotify.max_user_instances
+```
+
+Then restart `seaf-daemon` and confirm no new watch-limit errors appear:
+
+```bash
+grep -c 'fail to add watch\\|No space left on device' /root/.ccnet/logs/seafile.log
+```
+
+The live worktree ignore files must be named exactly `seafile-ignore.txt` and sit at each library root. They should contain:
+
+```text
+@eaDir
+#recycle
+#snapshot
+@tmp
+.DS_Store
+Thumbs.db
+*.tmp
+```
+
+Important caveats:
+
+- Synology continuously regenerates `@eaDir` thumbnail/metadata trees locally. Seeing them reappear on the NAS is expected; `seafile-ignore.txt` only stops Seafile from uploading new or changed ignored paths.
+- Adding the ignore file does not remove `@eaDir` content that already reached the Seafile server. Delete existing server-side `@eaDir` trees separately after confirming they are junk.
+- Ignore rules are cleanup and hygiene, not the repair for false-synchronized drift. `seaf-daemon` may still consume watches for ignored directories; the required repair is raising the host `fs.inotify.max_user_watches` limit.
+
+
+Useful environment variables:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `SEAF_MIN_INOTIFY_WATCHES` | `1048576` | Minimum acceptable host inotify watch limit before the dashboard reports an anomaly. |
+| `SEAF_INOTIFY_WARN_USAGE` | `0.80` | Alert threshold for daemon watch usage as a fraction of the host limit. |
+| `SEAF_CANARY_FILENAME` | `.seafile-sync-canary.json` | Per-library canary file name. |
+| `SEAF_CANARY_INTERVAL_SECONDS` | `600` | Minimum time between automatic canary rewrites. |
+| `SEAF_CANARY_GRACE_SECONDS` | `180` | Time allowed for the server to receive the latest canary before reporting an anomaly. |
+| `SEAF_ALERT_WEBHOOK_URL` | unset | Optional human alert webhook. The dashboard still turns red if this is unset. |
+| `SEAF_ALERT_COOLDOWN_SECONDS` | `3600` | Minimum time between duplicate anomaly alerts. |
+| `SEAF_TOKEN` | unset | Optional Seafile API token. If absent, the wrapper gets one from `SEAF_USERNAME`/`SEAF_PASSWORD`. |
+
+The NAS Settings Controls tab can queue `verify_now` to run the check immediately
+or `write_canary` to force a fresh canary write before checking.
 
 ## Failed initial clone recovery
 

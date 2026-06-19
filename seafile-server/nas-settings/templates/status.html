@@ -152,6 +152,7 @@
     .status-badge.error  { background: #fef2f2; color: #b91c1c; }
     .status-badge.idle   { background: #f9fafb; color: #6b7280; }
     .status-badge.paused { background: #eff6ff; color: #1d4ed8; }
+    .status-badge.verified { background: #ecfdf5; color: #047857; }
 
     .command-note {
       border-radius: 6px;
@@ -181,6 +182,7 @@
     .dot.error  { background: #ef4444; }
     .dot.idle   { background: #9ca3af; }
     .dot.paused { background: #3b82f6; }
+    .dot.verified { background: #10b981; }
 
     .btn-pause, .btn-resume {
       padding: 7px 18px;
@@ -256,6 +258,34 @@
       border-radius: 8px;
       margin-bottom: 14px;
       padding: 12px 14px;
+    }
+
+    .verify-panel {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      margin-bottom: 14px;
+      padding: 12px 14px;
+    }
+
+    .verify-panel.bad {
+      background: #fff1f2;
+      border-color: #fecdd3;
+    }
+
+    .verify-title {
+      color: #374151;
+      font-size: 0.84rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .diff-list {
+      color: #4b5563;
+      font-size: 0.8rem;
+      line-height: 1.45;
+      margin-top: 8px;
+      overflow-wrap: anywhere;
     }
 
     .transfer-title {
@@ -393,7 +423,10 @@
 
     function badgeClass(entry, state, stale) {
       if (stale) return "idle";
+      const verify = entry.verification || {};
+      if (verify.status === "anomaly") return "error";
       if (entry.paused) return "paused";
+      if (state === "synchronized" && verify.status === "healthy") return "verified";
       if (state === "synchronized") return "ok";
       if (state === "uploading" || state === "downloading") return "busy";
       if (state === "error") return "error";
@@ -403,8 +436,11 @@
     function badgeLabel(entry, state, stale) {
       if (stale) return "Offline";
       if (!entry.daemon_alive) return "Daemon stopped";
+      const verify = entry.verification || {};
+      if (verify.status === "anomaly") return "Sync anomaly";
       if (entry.paused) return "Paused";
-      if (state === "synchronized") return "Synchronized";
+      if (state === "synchronized" && verify.status === "healthy") return "Verified synchronized";
+      if (state === "synchronized") return "Synchronized (unverified)";
       if (state === "uploading") {
         const pct = entry.repos[0]?.progress_pct;
         const rate = entry.repos[0]?.rate_kb;
@@ -466,6 +502,35 @@
       return "";
     }
 
+    function renderVerification(data) {
+      const verify = data.verification;
+      if (!verify) return "";
+      const bad = verify.status === "anomaly";
+      const daemon = verify.daemon_health || data.daemon_health || {};
+      const ino = daemon.inotify || {};
+      const log = daemon.log || {};
+      const canary = verify.canary || {};
+      const grid = `<div class="transfer-grid">
+            <div><label>Client head</label><div class="val">${verify.client_head ? escapeHtml(verify.client_head.slice(0, 12)) : "—"}</div></div>
+            <div><label>Server head</label><div class="val">${verify.server_head ? escapeHtml(verify.server_head.slice(0, 12)) : "—"}</div></div>
+            <div><label>Checked</label><div class="val">${verify.checked_at ? new Date(verify.checked_at).toLocaleTimeString() : "—"}</div></div>
+            <div><label>Canary</label><div class="val">${canary.ok === true ? "OK" : canary.ok === false ? "Failed" : "Unknown"}</div></div>
+            <div><label>Watch limit</label><div class="val">${ino.max_user_watches ?? "—"}</div></div>
+            <div><label>Watches used</label><div class="val">${ino.watches_in_use ?? "—"}</div></div>
+            <div><label>Watch errors</label><div class="val">${log.new_watch_errors ?? "—"}</div></div>
+            <div><label>Alert</label><div class="val">${verify.alert?.sent ? "Sent" : verify.alert?.reason ? escapeHtml(verify.alert.reason) : "—"}</div></div>
+          </div>`;
+      const parts = [];
+      if (daemon.issues?.length) parts.push(daemon.issues.map(escapeHtml).join("<br>"));
+      if (verify.diagnostics?.head_check) parts.push(escapeHtml(verify.diagnostics.head_check));
+      return `<div class="verify-panel ${bad ? "bad" : ""}">
+        <div class="verify-title">Independent verification: ${escapeHtml(verify.status || "unknown")}</div>
+        ${grid}
+        ${verify.reason ? `<div class="diff-list">${escapeHtml(verify.reason)}</div>` : ""}
+        ${parts.length ? `<div class="diff-list">${parts.join("<br>")}</div>` : ""}
+      </div>`;
+    }
+
     function renderCard(lib, data) {
       const bodyEl   = document.getElementById("body-" + lib.id);
       const seenEl   = document.getElementById("seen-" + lib.id);
@@ -500,6 +565,7 @@
       const label = badgeLabel(data, state, stale);
 
       const note = commandNote(lib, data);
+      const verificationPanel = renderVerification(data);
 
       let progressBar = "";
       if (!stale && state === "uploading" && repo && repo.progress_pct !== null) {
@@ -536,6 +602,7 @@
           ${label}
         </div>
         ${note}
+        ${verificationPanel}
         ${progressBar}
         ${transferPanel}
         <div class="meta-grid">

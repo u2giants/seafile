@@ -4,7 +4,7 @@
 {% block content %}
   <h1 class="page-heading">Sync Controls</h1>
   <p class="page-sub">
-    Start, stop, pause and resume each library's sync. Commands are picked up by
+    Start, stop, pause, resume, and verify each library's sync. Commands are picked up by
     the NAS on its next status report, so they apply within ~30&nbsp;seconds.
   </p>
 
@@ -35,6 +35,7 @@
     if (entry.paused) return '<span class="badge paused">Paused</span>';
     const repo = (entry.repos && entry.repos[0]) || null;
     const st = repo ? repo.state : null;
+    if (entry.verification && entry.verification.status === "anomaly") return '<span class="badge error">Sync anomaly</span>';
     if (st === "synchronized") return '<span class="badge ok">Synchronized</span>';
     if (st === "uploading" || st === "downloading") return '<span class="badge busy">' + st + '</span>';
     if (st === "error") return '<span class="badge error">Error</span>';
@@ -79,12 +80,14 @@
         html += '<button class="btn btn-default" onclick="send(\'' + lib.uuid + '\',\'pause\',{},false,this)">Pause sync</button>';
       }
       html += '<button class="btn btn-default" onclick="send(\'' + lib.uuid + '\',\'restart\',{},false,this)">Restart daemon</button>';
+      html += '<button class="btn btn-blue" onclick="send(\'' + lib.uuid + '\',\'verify_now\',{},false,this)">Verify now</button>';
+      html += '<button class="btn btn-default" onclick="send(\'' + lib.uuid + '\',\'write_canary\',{},false,this)">Write canary</button>';
       html += '<button class="btn btn-danger" onclick="confirmStop(\'' + lib.uuid + '\',\'' + lib.name.replace(/'/g, "\\'") + '\')">Stop daemon</button>';
       btnsEl.innerHTML = html;
     }
 
     // Surface the most recent command result for these verbs.
-    const verbs = ["pause", "resume", "restart", "stop"];
+    const verbs = ["pause", "resume", "restart", "stop", "verify_now", "write_canary"];
     const res = (entry.recent_results || []).find(r => verbs.includes(r.verb));
     const pending = (entry.pending_commands || []).filter(c => verbs.includes(c.verb));
     if (pending.length) {

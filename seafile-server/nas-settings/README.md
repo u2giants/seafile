@@ -11,14 +11,14 @@ System Admin sidebar.
 
 | Tab | seaf-cli equivalent | What it does |
 |-----|---------------------|--------------|
-| **Dashboard** | `status` | Live per-library sync state, progress, errors, staging/ingest info; pause/resume. |
-| **Controls** | `start` / `stop` / auto-sync | Pause, resume, restart daemon, stop daemon. |
+| **Dashboard** | `status` | Live per-library sync state, commit/inotify verification, progress, errors, staging/ingest info; pause/resume. |
+| **Controls** | `start` / `stop` / auto-sync | Pause, resume, restart daemon, stop daemon, verify now, write canary. |
 | **Config** | `config -k [-v]` | Get/set any daemon config key (upload/download limits, TLS verify, …) plus a free-form key/value. |
 | **Libraries** | `list`, `list-remote`, `create`, `desync` | Local libraries + desync; list server libraries; create a server library; show cached NAS folder sizes. |
 | **Ingest Window** | — | Per-library ingest-day window plus weekday/weekend sync schedules. |
 
 ### Safety tiers
-- **Read / Safe** (status, list, config get/set, pause/resume/restart/stop) apply directly.
+- **Read / Safe** (status, list, config get/set, pause/resume/restart/stop, verify now, write canary) apply directly.
 - **Guarded** (`desync`, `create`, re-`init`) require typing the library name to confirm; the
   server also rejects them unless the request carries `confirm: true`.
 - **Guidance-only**: `download` / `sync` of a *brand-new* NAS folder can't be done to a
@@ -113,6 +113,28 @@ the current schedule on each 30-second status heartbeat. `ingest_days: null` mea
 Monday is `0`, Sunday is `6`. If a window's end time is earlier than its start time,
 the window runs overnight.
 
+## Independent sync verification
+
+Each NAS status heartbeat can include a `verification` object produced by the
+seaf-cli wrapper. The dashboard shows it separately from Seafile's daemon state so
+admins can see whether "synchronized" was independently confirmed.
+
+When the NAS wrapper sees a repo report `synchronized`, it compares the client's
+synced commit head with the server repo head, scans the daemon log for inotify
+watch failures, reports inotify watch usage/limits, and checks a per-library canary
+file. Any failure is reported as `anomaly` with diagnostics. The wrapper does not
+auto-restart the daemon; restart can temporarily hide an inotify-watch failure by
+forcing a one-time scan while leaving the host kernel limit broken.
+
+`seafile-ignore.txt` is hygiene, not the inotify repair: Synology will keep regenerating local `@eaDir` trees, existing server-side `@eaDir` content must be deleted separately, and the required fix for false-synchronized drift is raising the host inotify watch limit.
+
+Controls exposes two safe commands for manual checks:
+
+| Command | Effect |
+|---------|--------|
+| `verify_now` | Runs the commit-head, inotify/log, and canary verification immediately. |
+| `write_canary` | Forces a new `.seafile-sync-canary.json` write, then verifies it. |
+
 ## API endpoints
 
 | Endpoint | Auth | Purpose |
@@ -124,6 +146,8 @@ the window runs overnight.
 
 `refresh_folder_sizes` is a safe command that asks the NAS agent to rebuild its cached
 recursive folder-size table immediately. Otherwise the cache refreshes nightly.
+`verify_now` and `write_canary` are safe commands used by the independent verification
+guard.
 
 ## State
 

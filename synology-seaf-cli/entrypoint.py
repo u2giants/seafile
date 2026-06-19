@@ -16,6 +16,7 @@ import sys
 import threading
 import time
 import urllib.request
+import urllib.parse
 
 import seafile
 try:
@@ -30,6 +31,12 @@ WATCHDOG_INTERVAL_SECONDS = 10
 STATUS_REPORT_INTERVAL_SECONDS = 30
 FOLDER_SIZE_SCAN_HOUR = 2
 FOLDER_SIZE_SCAN_TZ = "America/New_York"
+CANARY_FILENAME = os.environ.get("SEAF_CANARY_FILENAME", ".seafile-sync-canary.json")
+CANARY_INTERVAL_SECONDS = int(os.environ.get("SEAF_CANARY_INTERVAL_SECONDS", "600"))
+CANARY_GRACE_SECONDS = int(os.environ.get("SEAF_CANARY_GRACE_SECONDS", "180"))
+INOTIFY_WARN_USAGE = float(os.environ.get("SEAF_INOTIFY_WARN_USAGE", "0.80"))
+MIN_INOTIFY_WATCHES = int(os.environ.get("SEAF_MIN_INOTIFY_WATCHES", "1048576"))
+ALERT_COOLDOWN_SECONDS = int(os.environ.get("SEAF_ALERT_COOLDOWN_SECONDS", "3600"))
 
 # Well-known seaf-daemon config keys reported in the status snapshot so the
 # nas-settings Config page can show current values. Any key can still be
@@ -98,8 +105,14 @@ class Client:
         self.target = Path("/library")
         self.source = Path("/library")
         self.folder_size_cache_path = self.seafile / "folder-size-cache.json"
+        self.health_cache_path = self.seafile / "health-cache.json"
         self._folder_size_scan_lock = threading.Lock()
         self._folder_size_scan_running = False
+        self._api_token: str | None = None
+        self._api_token_checked_at = 0.0
+        self._verification_cache: dict[str, dict] = {}
+        self._last_canary_at: dict[str, float] = {}
+        self.alert_webhook_url = get_configuration("SEAF_ALERT_WEBHOOK_URL", None)
 
         if self.socket.exists():
             self.rpc = seafile.RpcClient(str(self.socket))
@@ -221,17 +234,24 @@ class Client:
             subprocess.run(command + ["-k", "upload_limit", "-v", self.upload_limit], check=True)
 
     def _write_seafile_ignore(self, target: Path) -> None:
-        ignore_file = target / ".seafile-ignore"
-        if not ignore_file.exists():
-            ignore_file.write_text(
-                "@eaDir\n#recycle\n@tmp\n.DS_Store\nThumbs.db\n*.tmp\n"
-            )
-            logger.info("Wrote .seafile-ignore to %s", target)
+        ignore_file = target / "seafile-ignore.txt"
+        content = "@eaDir\n#recycle\n#snapshot\n@tmp\n.DS_Store\nThumbs.db\n*.tmp\n"
+        try:
+            current = ignore_file.read_text()
+        except OSError:
+            current = None
+        if current != content:
+            ignore_file.write_text(content)
+            logger.info("Wrote seafile-ignore.txt to %s", target)
 
     def synchronize(self):
         core = [*self.binary, "sync", *self._get_credential_args()]
         for name, configuration in self.libraries.items():
             uuid = configuration["uuid"]
+
+            target = self.target if name == "_" else self.target.joinpath(name)
+            target.mkdir(parents=True, exist_ok=True)
+            self._write_seafile_ignore(target)
 
             repository = self.rpc.get_repo(uuid)
             if repository is not None:
@@ -242,10 +262,6 @@ class Client:
 
             if "password" in configuration:
                 command += ["-e", configuration["password"]]
-
-            target = self.target if name == "_" else self.target.joinpath(name)
-            target.mkdir(parents=True, exist_ok=True)
-            self._write_seafile_ignore(target)
             command += ["-d", str(target)]
 
             if self.mfa_secret:
@@ -348,6 +364,12 @@ class Client:
         uuid = os.environ.get("SEAF_LIBRARY", "")
         return [("_", uuid)] if uuid else []
 
+    def _name_for_library_uuid(self, library_uuid: str | None) -> str:
+        for name, uuid in self._library_targets():
+            if uuid == library_uuid:
+                return name
+        return "_"
+
     def _repos_for_library(self, library_uuid: str | None):
         repos = self.rpc.get_repo_list(-1, -1)
         if not library_uuid:
@@ -366,6 +388,8 @@ class Client:
                 pass
 
         repos = []
+        verification = None
+        daemon_health = self._daemon_health(pid)
         if hasattr(self, "rpc"):
             try:
                 rpc_repos = self._repos_for_library(library_uuid)
@@ -399,6 +423,15 @@ class Client:
                                     entry["blocks_total"] = getattr(tx, "block_total", None)
                             elif task.state == "error":
                                 entry["error"] = self.rpc.sync_error_id_to_str(task.error)
+                    if library_uuid and repo.id == library_uuid:
+                        verification = self._verify_library(
+                            self._name_for_library_uuid(library_uuid),
+                            repo,
+                            entry.get("state"),
+                            daemon_health,
+                        )
+                        if verification.get("status") == "anomaly":
+                            entry["error"] = verification.get("reason")
                     repos.append(entry)
             except Exception:
                 pass
@@ -450,11 +483,13 @@ class Client:
             "reported_at": datetime.datetime.utcnow().isoformat() + "Z",
             "daemon_pid": pid,
             "daemon_alive": daemon_alive,
+            "daemon_health": daemon_health,
             "heartbeat_interval_seconds": STATUS_REPORT_INTERVAL_SECONDS,
             "watchdog_interval_seconds": WATCHDOG_INTERVAL_SECONDS,
             "paused": paused,
             "repos": repos,
             "local_repos": local_repos,
+            "verification": verification or self._verification_cache.get(library_uuid or ""),
             "config": self._config_cache or {},
             "confdir": str(self.ini.parent),
             "initialized": self.ini.exists(),
@@ -498,6 +533,313 @@ class Client:
             return json.loads(self.folder_size_cache_path.read_text())
         except Exception:
             return None
+
+    def _load_health_cache(self) -> dict:
+        try:
+            data = json.loads(self.health_cache_path.read_text())
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def _save_health_cache(self, data: dict) -> None:
+        self.health_cache_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.health_cache_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, indent=2, sort_keys=True))
+        tmp.replace(self.health_cache_path)
+
+    def _api_request(self, path: str, *, data: dict | None = None) -> Any:
+        if data is not None:
+            encoded = urllib.parse.urlencode(data).encode()
+            req = urllib.request.Request(self.url.rstrip("/") + path, data=encoded, method="POST")
+        else:
+            req = urllib.request.Request(self.url.rstrip("/") + path)
+        if self._api_token:
+            req.add_header("Authorization", f"Token {self._api_token}")
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            raw = resp.read().decode()
+        return json.loads(raw) if raw else None
+
+    def _ensure_api_token(self) -> bool:
+        if self._api_token:
+            return True
+        # Avoid hammering auth if credentials are wrong or the API is temporarily down.
+        if time.monotonic() - self._api_token_checked_at < 300:
+            return False
+        self._api_token_checked_at = time.monotonic()
+        if self.token:
+            self._api_token = self.token
+            return True
+        if not self.password:
+            return False
+        try:
+            body = self._api_request(
+                "/api2/auth-token/",
+                data={"username": self.username, "password": self.password},
+            )
+            token = body.get("token") if isinstance(body, dict) else None
+            if token:
+                self._api_token = token
+                return True
+        except Exception as exc:
+            logger.warning("Could not obtain Seafile API token for verification: %s", exc)
+        return False
+
+    def _target_for_library_name(self, name: str) -> Path:
+        return self.target if name == "_" else self.target / name
+
+    def _read_int_file(self, path: Path) -> int | None:
+        try:
+            return int(path.read_text().strip())
+        except Exception:
+            return None
+
+    def _local_repo_head(self, repo: Any) -> str | None:
+        for attr in ("head_cmmt_id", "head_commit_id", "last_commit_id", "commit_id", "head"):
+            value = getattr(repo, attr, None)
+            if value:
+                return str(value)
+        return None
+
+    def _server_repo_head(self, repo_id: str) -> str | None:
+        if not self._ensure_api_token():
+            raise RuntimeError("Seafile API token unavailable")
+        data = self._api_request(f"/api2/repos/{repo_id}/")
+        if not isinstance(data, dict):
+            raise RuntimeError("unexpected server repo response")
+        for key in ("head_cmmt_id", "head_commit_id", "last_commit_id", "commit_id", "head"):
+            value = data.get(key)
+            if value:
+                return str(value)
+        return None
+
+    def _scan_log_watch_errors(self) -> dict:
+        cache = self._load_health_cache()
+        log_state = cache.get("_seafile_log", {}) if isinstance(cache.get("_seafile_log"), dict) else {}
+        try:
+            st = self.log.stat()
+        except OSError:
+            return {"new_watch_errors": 0, "error": "seafile.log unavailable"}
+
+        inode = f"{st.st_dev}:{st.st_ino}"
+        offset = int(log_state.get("offset") or 0) if log_state.get("inode") == inode else 0
+        if st.st_size < offset:
+            offset = 0
+
+        new_watch_errors = 0
+        bytes_read = 0
+        try:
+            with self.log.open("r", errors="replace") as fh:
+                fh.seek(offset)
+                for line in fh:
+                    bytes_read += len(line.encode(errors="replace"))
+                    if "fail to add watch" in line or "No space left on device" in line:
+                        new_watch_errors += 1
+                new_offset = fh.tell()
+        except Exception as exc:
+            return {"new_watch_errors": 0, "error": str(exc)}
+
+        cache["_seafile_log"] = {"inode": inode, "offset": new_offset}
+        self._save_health_cache(cache)
+        return {
+            "new_watch_errors": new_watch_errors,
+            "bytes_read": bytes_read,
+            "log_size": st.st_size,
+        }
+
+    def _inotify_usage(self, pid: int | None) -> dict:
+        max_watches = self._read_int_file(Path("/proc/sys/fs/inotify/max_user_watches"))
+        max_instances = self._read_int_file(Path("/proc/sys/fs/inotify/max_user_instances"))
+        watches = 0
+        instances = 0
+        errors = 0
+
+        fdinfo_root = Path(f"/proc/{pid}/fdinfo") if pid else None
+        if fdinfo_root and fdinfo_root.exists():
+            for fdinfo in fdinfo_root.iterdir():
+                try:
+                    count = sum(1 for line in fdinfo.read_text(errors="replace").splitlines()
+                                if line.startswith("inotify "))
+                    if count:
+                        instances += 1
+                        watches += count
+                except OSError:
+                    errors += 1
+        else:
+            errors += 1
+
+        usage = (watches / max_watches) if max_watches else None
+        return {
+            "watches_in_use": watches,
+            "instances_in_use": instances,
+            "max_user_watches": max_watches,
+            "max_user_instances": max_instances,
+            "usage": usage,
+            "errors": errors,
+        }
+
+    def _daemon_health(self, pid: int | None) -> dict:
+        log_health = self._scan_log_watch_errors()
+        inotify = self._inotify_usage(pid)
+        issues = []
+        if (inotify.get("max_user_watches") or 0) < MIN_INOTIFY_WATCHES:
+            issues.append(
+                f"fs.inotify.max_user_watches below minimum "
+                f"({inotify.get('max_user_watches')} < {MIN_INOTIFY_WATCHES})"
+            )
+        if inotify.get("usage") is not None and inotify["usage"] >= INOTIFY_WARN_USAGE:
+            issues.append(
+                f"inotify watch usage high "
+                f"({inotify['watches_in_use']}/{inotify['max_user_watches']})"
+            )
+        if log_health.get("new_watch_errors", 0) > 0:
+            issues.append(
+                f"seaf-daemon logged {log_health['new_watch_errors']} new inotify watch errors"
+            )
+        return {
+            "status": "anomaly" if issues else "healthy",
+            "issues": issues,
+            "inotify": inotify,
+            "log": log_health,
+            "checked_at": datetime.datetime.utcnow().isoformat() + "Z",
+        }
+
+    def _canary_status(self, repo_id: str, root: Path) -> dict:
+        now = time.monotonic()
+        canary = root / CANARY_FILENAME
+        if now - self._last_canary_at.get(repo_id, 0) >= CANARY_INTERVAL_SECONDS:
+            payload = {
+                "repo_id": repo_id,
+                "container_id": os.environ.get("HOSTNAME", "unknown"),
+                "written_at": datetime.datetime.utcnow().isoformat() + "Z",
+            }
+            canary.write_text(json.dumps(payload, sort_keys=True) + "\n")
+            self._last_canary_at[repo_id] = now
+        try:
+            local_stat = canary.stat()
+        except OSError:
+            return {"ok": False, "error": "local canary file missing"}
+        local_age = time.time() - local_stat.st_mtime
+        try:
+            if not self._ensure_api_token():
+                return {"ok": None, "error": "Seafile API token unavailable"}
+            data = self._api_request(
+                f"/api2/repos/{repo_id}/file/detail/?p=/{urllib.parse.quote(CANARY_FILENAME)}"
+            )
+            server_size = int(data.get("size") or 0) if isinstance(data, dict) else 0
+            server_mtime = int(data.get("mtime") or 0) if isinstance(data, dict) else 0
+            size_matches = server_size == local_stat.st_size
+            mtime_matches = not server_mtime or server_mtime + 2 >= int(local_stat.st_mtime)
+            if (not size_matches or not mtime_matches) and local_age < CANARY_GRACE_SECONDS:
+                return {
+                    "ok": None,
+                    "error": "canary upload pending",
+                    "local_size": local_stat.st_size,
+                    "server_size": server_size,
+                    "local_mtime": int(local_stat.st_mtime),
+                    "server_mtime": server_mtime,
+                    "age_seconds": int(local_age),
+                }
+            return {
+                "ok": size_matches and mtime_matches,
+                "local_size": local_stat.st_size,
+                "server_size": server_size,
+                "local_mtime": int(local_stat.st_mtime),
+                "server_mtime": server_mtime,
+                "age_seconds": int(local_age),
+            }
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                if local_age < CANARY_GRACE_SECONDS:
+                    return {
+                        "ok": None,
+                        "error": "canary upload pending",
+                        "age_seconds": int(local_age),
+                    }
+                return {"ok": False, "error": "server canary file missing"}
+            return {"ok": None, "error": f"server canary check failed: HTTP {exc.code}"}
+        except Exception as exc:
+            return {"ok": None, "error": str(exc)}
+
+    def _alert_anomaly(self, repo_id: str, result: dict) -> dict:
+        if not self.alert_webhook_url:
+            return {"sent": False, "reason": "SEAF_ALERT_WEBHOOK_URL not configured"}
+
+        cache = self._load_health_cache()
+        alerts = cache.setdefault("_alerts", {})
+        key = f"{repo_id}:{result.get('status')}:{result.get('reason')}"
+        now = time.time()
+        if now - float(alerts.get(key, 0) or 0) < ALERT_COOLDOWN_SECONDS:
+            return {"sent": False, "reason": "alert cooldown active"}
+
+        payload = json.dumps({
+            "text": f"Seafile NAS sync anomaly for {repo_id}: {result.get('reason')}",
+            "repo_id": repo_id,
+            "status": result,
+        }).encode()
+        try:
+            req = urllib.request.Request(
+                self.alert_webhook_url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                resp.read()
+            alerts[key] = now
+            self._save_health_cache(cache)
+            return {"sent": True}
+        except Exception as exc:
+            logger.warning("Failed to send sync anomaly alert for %s: %s", repo_id, exc)
+            return {"sent": False, "reason": str(exc)}
+
+    def _verify_library(self, name: str, repo: Any, repo_state: str | None, daemon_health: dict | None = None) -> dict:
+        repo_id = repo.id
+        root = self._target_for_library_name(name)
+        started_at = datetime.datetime.utcnow()
+        result = {
+            "checked_at": started_at.isoformat() + "Z",
+            "status": "unknown",
+            "reason": None,
+            "client_head": None,
+            "server_head": None,
+            "daemon_health": daemon_health,
+            "canary": None,
+            "diagnostics": {},
+            "alert": None,
+        }
+        issues = []
+        try:
+            client_head = self._local_repo_head(repo)
+            server_head = self._server_repo_head(repo_id)
+            result["client_head"] = client_head
+            result["server_head"] = server_head
+            if client_head and server_head and client_head != server_head and repo_state == "synchronized":
+                issues.append("client synced commit differs from server head while repo reports synchronized")
+            elif client_head is None or server_head is None:
+                result["diagnostics"]["head_check"] = "commit head unavailable"
+
+            if daemon_health and daemon_health.get("status") == "anomaly":
+                issues.extend(daemon_health.get("issues") or ["daemon health anomaly"])
+
+            result["canary"] = self._canary_status(repo_id, root)
+            if result["canary"] and result["canary"].get("ok") is False:
+                issues.append(result["canary"].get("error") or "canary did not round trip")
+
+            if issues:
+                result["status"] = "anomaly"
+                result["reason"] = "; ".join(dict.fromkeys(issues))
+                result["alert"] = self._alert_anomaly(repo_id, result)
+            else:
+                result["status"] = "healthy"
+                result["reason"] = "commit head, inotify health, and canary checks passed"
+        except Exception as exc:
+            result["status"] = "unknown"
+            result["reason"] = str(exc)
+        cache = self._load_health_cache()
+        cache[repo_id] = result
+        self._save_health_cache(cache)
+        self._verification_cache[repo_id] = result
+        return result
 
     def _save_folder_size_cache(self, cache: dict) -> None:
         self.folder_size_cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -806,6 +1148,27 @@ class Client:
             elif verb == "refresh_folder_sizes":
                 self._refresh_folder_size_cache_async(force=True)
                 result.update(ok=True, output="folder-size refresh started")
+
+            elif verb in ("verify_now", "write_canary"):
+                repos = self._repos_for_library(command.get("library_uuid"))
+                if not repos:
+                    raise RuntimeError("no synced library yet")
+                messages = []
+                daemon_health = self._daemon_health(self._daemon_pid())
+                for repo in repos:
+                    name = self._name_for_library_uuid(repo.id)
+                    if verb == "write_canary":
+                        self._last_canary_at[repo.id] = 0
+                    state = None
+                    task = self.rpc.get_repo_sync_task(repo.id) if hasattr(self, "rpc") else None
+                    if task is not None:
+                        state = getattr(task, "state", None)
+                    verification = self._verify_library(name, repo, state, daemon_health)
+                    messages.append(
+                        f"{repo.name}: {verification.get('status')} - "
+                        f"{verification.get('reason') or 'checked'}"
+                    )
+                result.update(ok=True, output="\n".join(messages))
 
             elif verb == "desync":
                 worktree = args.get("worktree", "")

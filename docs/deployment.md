@@ -251,7 +251,7 @@ If renewal fails: verify DNS still resolves correctly and port 80 is reachable (
 
 ### NAS-agent image already picked up
 
-The 2026-06-11 recreate pulled `ghcr.io/u2giants/seafile:seaf-cli-latest` and started the single `seaf-cli` service from current compose. If a future status payload lacks fields such as `folder_size_cache`, or if `@eaDir` folders still appear in Seafile after a refresh, first verify the running image digest and that the active compose config contains only the `seaf-cli` service. `/tmp` is wiped on reboot, so `/tmp/seaf-cli-compose-codex.yml` and `/tmp/.env` may need re-staging before a future recreate.
+The 2026-06-11 recreate pulled `ghcr.io/u2giants/seafile:seaf-cli-latest` and started the single `seaf-cli` service from current compose. If a future status payload lacks fields such as `folder_size_cache`, or if new `@eaDir` content keeps uploading after `seafile-ignore.txt` is present, first verify the running image digest and that the active compose config contains only the `seaf-cli` service. `/tmp` is wiped on reboot, so `/tmp/seaf-cli-compose-codex.yml` and `/tmp/.env` may need re-staging before a future recreate.
 
 ### Windows workstation cutover (optional)
 `windows-workstation/setup.ps1` exists but the cutover was not validated against the current single-container NAS sync model. Review the Windows compose/runtime path first. Only one host may run seaf-cli for a library at a time.

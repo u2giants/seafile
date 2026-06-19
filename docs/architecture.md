@@ -100,7 +100,7 @@ Startup flow:
     │
     ▼ entrypoint.py
     │  – starts seaf-daemon in /seafile
-    │  – writes .seafile-ignore into each target if missing
+    │  – writes/refreshes seafile-ignore.txt in each target before clone-skip checks
     │  – registers each /library/<key> path with seaf-cli
     │  – before retrying an unsynced repo, clears only failed clone.db tasks for that repo
     │  – reports live status and can enforce sync schedules / scan cached folder sizes
@@ -108,7 +108,7 @@ Startup flow:
     ▼ Seafile → S3
 ```
 
-`entrypoint.py` receives the current sync schedule on the 30-second status heartbeat, evaluates weekday and weekend windows in the configured timezone, toggles each repo's `auto-sync` property, and can build a cached recursive folder-size table nightly after 2 AM New York time or on command. The `.seafile-ignore` file suppresses Synology metadata and common temp files in the synced library paths.
+`entrypoint.py` receives the current sync schedule on the 30-second status heartbeat, evaluates weekday and weekend windows in the configured timezone, toggles each repo's `auto-sync` property, and can build a cached recursive folder-size table nightly after 2 AM New York time or on command. `seafile-ignore.txt` suppresses Synology metadata and common temp files in synced library paths. It is hygiene only: Synology can regenerate local `@eaDir` trees and ignored directories may still consume inotify watches, so host inotify limits must still be sized correctly.
 
 ### Deployment options
 

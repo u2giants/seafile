@@ -225,7 +225,7 @@ Actually:
 The current NAS compose bind-mounts live NAS folders directly under `/library/<key>` in the single `seaf-cli` container. The named `seaf-cli-data` volume is only for seaf-daemon state and caches.
 
 Why:
-The current wrapper supports multi-library sync directly through `SEAF_LIBRARY_<KEY>` variables and `.seafile-ignore` files.
+The current wrapper supports multi-library sync directly through `SEAF_LIBRARY_<KEY>` variables and Seafile's exact `seafile-ignore.txt` filename.
 
 Do not change because:
 Deleting `/library` paths or treating them as cache can affect live NAS data. To force sync-state rebuilds, operate on `seaf-cli-data` only after an explicit rollback/recovery plan.
@@ -307,6 +307,18 @@ After the server-side limit was raised, seaf-daemon still returned "Task is alre
 
 Future sessions should:
 Do not delete the `seaf-cli-data` volume for this failure mode. Confirm the server has the intended fileserver limits, then let the current image clear only `state=error` clone rows for the affected repo; active fetch/upload tasks are intentionally left alone.
+
+### 2026-06-19 Generic Decor false-synchronized state
+
+What changed:
+Generic Decor drift was traced to Synology host inotify exhaustion, not a stale Seafile index. `seaf-daemon` logged `fail to add watch` / `No space left on device` while the host limit was still `fs.inotify.max_user_watches=8192`; the synced trees contain roughly 541k directories, about 82% of them `@eaDir` thumbnail/metadata junk.
+
+Why:
+When directories are not watched, NAS edits there do not fire events, so `seaf-cli status` can report `synchronized` because the client index sees no change. Restarting `seaf-daemon` runs a one-time scan and can temporarily mask the symptom while leaving the inotify limit broken.
+
+Future sessions should:
+Do not treat restart as the repair. Raise the Synology host inotify limits persistently via a DSM boot-up task, then deploy the updated `synology-seaf-cli` image. Seafile ignore files must be named exactly `seafile-ignore.txt`; `.seafile-ignore` is not recognized. Ignore rules are cleanup/hygiene and may not reduce inotify watches.
+
 
 ### Seahub template overrides are full-file copies
 

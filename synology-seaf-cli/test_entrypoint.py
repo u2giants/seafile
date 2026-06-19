@@ -31,7 +31,15 @@ c.socket = Path("/seafile/seafile-data/seafile.sock")
 c.seafile = Path("/seafile")
 c.source = Path(tempfile.mkdtemp())
 c.folder_size_cache_path = Path(tempfile.mkdtemp()) / "folder-size-cache.json"
+c.health_cache_path = Path(tempfile.mkdtemp()) / "health-cache.json"
+c.log = Path(tempfile.mkdtemp()) / "seafile.log"
+c.log.write_text("")
 c._folder_size_scan_running = False
+c._verification_cache = {}
+c._last_canary_at = {}
+c._api_token = "TOKEN"
+c._api_token_checked_at = 0.0
+c.alert_webhook_url = None
 
 calls = []
 def fake_run(args, timeout=120):
@@ -46,15 +54,28 @@ class FakeRepo:
         self.name = "lib"
         self.auto_sync = 1
         self.worktree = f"/library/{rid}"
+        self.head_cmmt_id = f"head-{rid}"
 class FakeRpc:
     def __init__(self):
         self.props = {}
         self._repos = [FakeRepo("repo1"), FakeRepo("repo2")]
     def get_repo_list(self, a, b): return self._repos
+    def get_repo(self, rid):
+        return next((repo for repo in self._repos if repo.id == rid), None)
     def is_auto_sync_enabled(self): return True
     def get_repo_sync_task(self, rid): return None
     def set_repo_property(self, rid, key, value): self.props[(rid, key)] = value
 c.rpc = FakeRpc()
+c.libraries = {
+    "repo1": {"uuid": "repo1"},
+    "repo2": {"uuid": "repo2"},
+}
+c.target = Path(tempfile.mkdtemp())
+c.synchronize()
+expected_ignore = "@eaDir\n#recycle\n#snapshot\n@tmp\n.DS_Store\nThumbs.db\n*.tmp\n"
+check("ignore file is refreshed for already-synced repos",
+      (c.target / "repo1" / "seafile-ignore.txt").read_text() == expected_ignore
+      and (c.target / "repo2" / "seafile-ignore.txt").read_text() == expected_ignore)
 
 def disp(verb, args=None):
     calls.clear()
@@ -93,6 +114,15 @@ check("list_remote includes creds",
 c._refresh_folder_size_cache_async = lambda force=False: calls.append(["refresh_folder_sizes", force])
 check("refresh_folder_sizes starts scanner",
       disp("refresh_folder_sizes")["ok"] and calls == [["refresh_folder_sizes", True]])
+c._verify_library = lambda name, repo, state, daemon_health=None: {"status": "healthy", "reason": "checked"}
+c._daemon_health = lambda pid=None: {"status": "healthy", "issues": []}
+c._daemon_pid = lambda: 123
+check("verify_now runs sync verification",
+      c._dispatch_command({"id": "cmd1", "verb": "verify_now", "args": {}, "library_uuid": "repo1"})["ok"])
+c._last_canary_at = {"repo1": 1}
+c._dispatch_command({"id": "cmd1", "verb": "write_canary", "args": {}, "library_uuid": "repo1"})
+check("write_canary resets canary timer",
+      c._last_canary_at.get("repo1") == 0)
 check("desync -> desync -d", disp("desync", {"worktree": "/library"})["ok"]
       and calls == [["desync", "-d", "/library"]])
 r = disp("desync", {}); check("desync without worktree errors", not r["ok"] and "worktree" in r["error"])
@@ -127,6 +157,9 @@ status = c._collect_status("repo2")
 check("status report is keyed to requested library uuid",
       status["library_uuid"] == "repo2"
       and [repo["id"] for repo in status["repos"]] == ["repo2"])
+
+check("daemon health flags low inotify limit",
+      "below minimum" in ep.Client._daemon_health(c, None)["issues"][0])
 
 spec = importlib.util.spec_from_file_location(
     "seaf_entrypoint", Path(__file__).with_name("seaf-entrypoint.py")
