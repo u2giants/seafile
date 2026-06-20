@@ -444,7 +444,8 @@
       if (state === "uploading") {
         const pct = entry.repos[0]?.progress_pct;
         const rate = entry.repos[0]?.rate_kb;
-        let label = "Uploading";
+        const phase = entry.repos[0]?.transfer_phase;
+        let label = phase === "fs" ? "Uploading file list" : "Uploading";
         if (pct !== null && pct !== undefined) label += " " + pct + "%";
         if (rate !== null && rate !== undefined && rate > 0) label += " · " + fmtRate(rate);
         return label;
@@ -584,14 +585,22 @@
       const blocks = repo && repo.blocks_total
         ? `${repo.blocks_done || 0} / ${repo.blocks_total}`
         : "—";
+      const phase = repo?.transfer_phase;
+      const phaseLabel = phase === "fs" ? "File list" : phase === "data" ? "File content" : "—";
+      const progressLabel = repo?.progress_pct !== null && repo?.progress_pct !== undefined
+        ? repo.progress_pct + "%" : "—";
+      const countRow = phase === "fs" && repo?.fs_objects_total
+        ? `<div><label>Files</label><div class="val">${(repo.fs_objects_done ?? 0).toLocaleString()} / ${repo.fs_objects_total.toLocaleString()}</div></div>`
+        : `<div><label>Blocks</label><div class="val">${blocks}</div></div>`;
       const transferPanel = repo && (state === "uploading" || state === "downloading" || repo.rate_kb)
         ? `<div class="transfer-panel">
             <div class="transfer-title">Current transfer</div>
             <div class="transfer-grid">
               <div><label>Direction</label><div class="val">${state || "—"}</div></div>
               <div><label>Speed</label><div class="val">${fmtRate(repo.rate_kb)}</div></div>
-              <div><label>Progress</label><div class="val">${repo.progress_pct ?? "—"}${repo.progress_pct !== null && repo.progress_pct !== undefined ? "%" : ""}</div></div>
-              <div><label>Blocks</label><div class="val">${blocks}</div></div>
+              <div><label>Phase</label><div class="val">${phaseLabel}</div></div>
+              <div><label>Progress</label><div class="val">${progressLabel}</div></div>
+              ${countRow}
             </div>
           </div>`
         : "";

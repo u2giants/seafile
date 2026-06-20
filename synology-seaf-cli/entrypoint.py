@@ -414,13 +414,25 @@ class Client:
                             if task.state in ("uploading", "downloading"):
                                 tx = self.rpc.find_transfer_task(repo.id)
                                 if tx is not None:
-                                    if tx.block_total > 0:
-                                        entry["progress_pct"] = round(
-                                            tx.block_done / tx.block_total * 100, 1
-                                        )
+                                    rt_state = getattr(tx, "rt_state", None)
+                                    entry["transfer_phase"] = rt_state
                                     entry["rate_kb"] = round(tx.rate / 1024.0, 1)
-                                    entry["blocks_done"] = getattr(tx, "block_done", None)
-                                    entry["blocks_total"] = getattr(tx, "block_total", None)
+                                    if rt_state == "fs":
+                                        fs_done = getattr(tx, "fs_objects_done", None)
+                                        fs_total = getattr(tx, "fs_objects_total", None)
+                                        entry["fs_objects_done"] = fs_done
+                                        entry["fs_objects_total"] = fs_total
+                                        if fs_total:
+                                            entry["progress_pct"] = round(
+                                                (fs_done or 0) / fs_total * 100, 1
+                                            )
+                                    else:
+                                        if tx.block_total > 0:
+                                            entry["progress_pct"] = round(
+                                                tx.block_done / tx.block_total * 100, 1
+                                            )
+                                        entry["blocks_done"] = getattr(tx, "block_done", None)
+                                        entry["blocks_total"] = getattr(tx, "block_total", None)
                             elif task.state == "error":
                                 entry["error"] = self.rpc.sync_error_id_to_str(task.error)
                     if library_uuid and repo.id == library_uuid:
