@@ -319,6 +319,17 @@ When directories are not watched, NAS edits there do not fire events, so `seaf-c
 Future sessions should:
 Do not treat restart as the repair. Raise the Synology host inotify limits persistently via a DSM boot-up task, then deploy the updated `synology-seaf-cli` image. Seafile ignore files must be named exactly `seafile-ignore.txt`; `.seafile-ignore` is not recognized. Ignore rules are cleanup/hygiene and may not reduce inotify watches.
 
+### seaf-cli "bugs" reported against this image are usually base-image bugs, already fixed here
+
+What changed:
+A 2026-06 review reported three seaf-cli container bugs — `healthcheck()` always exits 0 (no return), `seaf-daemon` zombie / `tail -f` parking with no restart and no tini, and an unconditional `chown -R seafile:seafile /seafile /library`. Verified against source: all three live in the upstream base image `flrnnc/seafile-client` (its `/entrypoint.sh` and `/home/seafile/entrypoint.py`), NOT in upstream Seafile's `seaf-cli`/`seaf-daemon`, and NOT in this wrapper.
+
+Why:
+This image's `Dockerfile` overrides `ENTRYPOINT` to `tini -- /home/seafile/entrypoint.py` (our own `synology-seaf-cli/entrypoint.py`), bypassing the base `/entrypoint.sh` entirely. Our entrypoint already fixes/bypasses all three: `healthcheck()` returns `0/1` and guards a missing rpc socket; `watch()` polls the daemon PID and exits non-zero so Docker restarts it; SIGTERM/SIGINT call `seaf-cli stop`; tini is PID 1; and no `chown -R` runs (no base shell wrapper executes).
+
+Future sessions should:
+Do not re-fix those three — they are not present in the running image. Verify against `synology-seaf-cli/entrypoint.py` + `Dockerfile`, not against the `flrnnc/seafile-client` base. The only genuine wrapper bug from that review was the ignore filename/timing (`.seafile-ignore`, written only on first clone), fixed in 8e0f3c8. The real upstream-Seafile defect is separate and unfixed: the worktree monitor (`wt-monitor-linux.c`) adds inotify watches to ignored directories too, so `seafile-ignore.txt` does not reduce inotify watch count.
+
 
 ### Seahub template overrides are full-file copies
 
