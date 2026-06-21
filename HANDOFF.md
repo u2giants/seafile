@@ -29,3 +29,21 @@ Risks / watchouts:
 - `seafile-ignore.txt` is cleanup/hygiene and may not reduce inotify watches because the monitor may still watch ignored directories.
 - Synology continuously regenerates local `@eaDir` folders; seeing them reappear on the NAS is expected.
 - The `ai` account could not run `sudo -n sysctl`; root/admin action is required for the host kernel limit and boot task.
+
+## seaf-cli deployment migration to /volume1/docker/seaf-cli
+
+Status:
+partial (repo done; NAS migration is a one-time operator action)
+
+Done:
+- `synology-seaf-cli/docker-compose.yml` updated to be the source of truth: loads secrets via `env_file: - .env`, drops shell-passthrough secret vars, marks `seaf-cli-data` `external: true`. `.env.example` corrected. README rewritten with canonical deploy + the 2026-06-21 incident.
+- `synology-monitor` `deploy/synology/docker-compose.agent.yml`: `seaf-cli` added to Watchtower's watch list.
+
+Next action (operator, on edgesynology1 — one time):
+1. Create `/volume1/docker/seaf-cli/`, put this repo's `synology-seaf-cli/docker-compose.yml` there, and move the existing creds file to `/volume1/docker/seaf-cli/.env` (`chmod 600`).
+2. `cd /volume1/docker/seaf-cli && sudo docker compose down` is NOT needed; `sudo docker compose up -d` recreates the `seaf-cli` project in place. Then remove the old home-dir files (`/volume1/homes/ahazan/seaf-cli-compose-codex.yml`, `seaf-cli.env`).
+3. Apply the Watchtower change: `cd /volume1/docker/synology-monitor-agent && sudo docker compose -f compose.yaml up -d`.
+
+Risks / watchouts:
+- Never run `docker compose down -v` — it would delete the `seaf-cli-data` sync-state volume.
+- Deploy ONLY from `/volume1/docker/seaf-cli/` with a `.env` present; never from a home dir or `/tmp`, never via shell-exported creds + `sudo` (sudo strips them → empty env → crash-loop). This was the 2026-06-21 outage.

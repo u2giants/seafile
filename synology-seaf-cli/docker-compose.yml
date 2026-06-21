@@ -4,16 +4,31 @@
 # Each NAS folder is bind-mounted read-write at /library/<name>.
 # seaf-cli watches for changes via inotify and syncs within seconds.
 #
+# ── CANONICAL DEPLOYMENT (do not deviate) ──────────────────────────────────
+#   Location:  /volume1/docker/seaf-cli/   (a real stack dir — NOT a home dir,
+#              NOT /tmp). This file is the source of truth; copy it there.
+#   Secrets:   /volume1/docker/seaf-cli/.env  (chmod 600), loaded via env_file
+#              below. It MUST contain SEAF_USERNAME, SEAF_PASSWORD, and
+#              SEAF_STATUS_TOKEN. See .env.example. Never commit the real .env
+#              (it is gitignored).
+#   Deploy:    cd /volume1/docker/seaf-cli && sudo docker compose up -d
+#   Auto-update: Watchtower (synology-monitor stack) watches the "seaf-cli"
+#              container by name — new seaf-cli-latest images deploy themselves.
+#
+#   NEVER run `docker compose up` without the .env present in the stack dir, and
+#   NEVER pass creds via the shell environment + sudo (sudo strips them, which
+#   silently starts the container with no login → crash loop). env_file makes
+#   Compose fail loudly if .env is missing instead of starting broken.
+#   See README.md → "2026-06-21 incident" for what went wrong before.
+#
 # SEAF_LIBRARY_<KEY>  Library UUID for that key.
 #   Key must be a single word (no underscores) — it becomes the subfolder
 #   under /library and must match the bind-mount target exactly.
 #
-# SEAF_UPLOAD_LIMIT    Max upload speed in KB/s (optional).
-# SEAF_DOWNLOAD_LIMIT  Max download speed in KB/s (optional).
+# SEAF_UPLOAD_LIMIT    Max upload speed in KB/s (optional, set in .env).
+# SEAF_DOWNLOAD_LIMIT  Max download speed in KB/s (optional, set in .env).
 #
 # Image: ghcr.io/u2giants/seafile:seaf-cli-latest
-# Container lives on edgesynology1.
-# See README.md for deploy instructions.
 
 name: seaf-cli
 
@@ -28,23 +43,28 @@ services:
       resources:
         limits:
           memory: 2g
+    # Secrets (SEAF_USERNAME / SEAF_PASSWORD / SEAF_STATUS_TOKEN) load from this
+    # file in the stack dir. Compose errors if it is missing — fail loud, not broken.
+    env_file:
+      - .env
     volumes:
       - /volume1/mac/Decor/Character Licensed:/library/char:rw
       - /volume1/mac/Decor/Generic Decor:/library/decor:rw
       - /volume1/styleguides:/library/guides:rw
       - /volume1/mac/Art Library:/library/art:rw
       - seaf-cli-data:/seafile
+    # Non-secret config is tracked here in the repo (source of truth).
     environment:
       - SEAF_SERVER_URL=https://seafile.designflow.app
-      - SEAF_USERNAME
-      - SEAF_PASSWORD
       - SEAF_LIBRARY_CHAR=177cf9de-3066-482e-956a-7ae8d8786c6d
       - SEAF_LIBRARY_DECOR=1b116ab7-d66b-4411-a691-21f34eadb731
       - SEAF_LIBRARY_GUIDES=b6e1d4c9-434e-4d8a-bde2-7f19be9c0838
       - SEAF_LIBRARY_ART=d28d5118-e991-431a-be3d-2e6a15246479
       - SEAF_SETTINGS_URL=https://seafile.designflow.app/nas-settings/api/settings
-      - SEAF_STATUS_TOKEN
 
 volumes:
+  # Pre-existing named volume holding seaf-daemon sync state. external:true tells
+  # Compose to use it as-is and never try to create/own it.
   seaf-cli-data:
     name: seaf-cli-data
+    external: true

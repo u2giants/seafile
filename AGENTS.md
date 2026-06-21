@@ -330,6 +330,16 @@ This image's `Dockerfile` overrides `ENTRYPOINT` to `tini -- /home/seafile/entry
 Future sessions should:
 Do not re-fix those three — they are not present in the running image. Verify against `synology-seaf-cli/entrypoint.py` + `Dockerfile`, not against the `flrnnc/seafile-client` base. The only genuine wrapper bug from that review was the ignore filename/timing (`.seafile-ignore`, written only on first clone), fixed in 8e0f3c8. The real upstream-Seafile defect is separate and unfixed: the worktree monitor (`wt-monitor-linux.c`) adds inotify watches to ignored directories too, so `seafile-ignore.txt` does not reduce inotify watch count.
 
+### seaf-cli deploys ONLY from /volume1/docker/seaf-cli with a .env (2026-06-21 incident)
+
+What changed:
+The seaf-cli stack is canonically deployed at `/volume1/docker/seaf-cli/` on edgesynology1 — `docker-compose.yml` (from `synology-seaf-cli/`) + a `.env` (chmod 600) loaded via `env_file:`. It is in Watchtower's watch list (`synology-monitor` `deploy/synology/docker-compose.agent.yml`).
+
+Why:
+It had drifted to a personal home dir with creds in a non-auto-loaded `seaf-cli.env`. `sudo docker compose up -d` (no `--env-file`) recreated the container with an empty env — `sudo` strips exported shell vars — so it started with no login (`Bad configuration: SEAF_USERNAME required`) and crash-looped. It was also outside Watchtower's scope, so image fixes never auto-deployed.
+
+Future sessions should:
+Never deploy seaf-cli from a home dir or `/tmp`, and never pass creds via shell env + `sudo`. Use the `.env` in the stack dir (`env_file:` fails loud if missing). Keep `seaf-cli` in Watchtower's command list. The repo compose is the source of truth — copy it as-is; do not hand-maintain `-codex`/`-tmp` variants. Full detail in `synology-seaf-cli/README.md` → "2026-06-21 incident".
 
 ### Seahub template overrides are full-file copies
 

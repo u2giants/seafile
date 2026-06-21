@@ -4,7 +4,32 @@ Syncs folders from the NYC Synology NAS to Seafile Pro at `seafile.designflow.ap
 
 **This is the NAS deployment.** An alternative Windows workstation deployment exists at `windows-workstation/` for running the same containers on a LAN-connected Windows machine via SMB mounts, offloading CPU from the NAS. Only one deployment should be active at a time.
 
-**Status: the `seaf-cli` container lives on edgesynology1 and is managed over SSH from the VPS with `ssh edge1`.**
+**Status: the `seaf-cli` container runs on edgesynology1.**
+
+## Deployment (canonical) — read this first
+
+**Location:** `/volume1/docker/seaf-cli/` on edgesynology1 — a real stack directory alongside the other containers. **Not** a home directory, **not** `/tmp`.
+
+That directory holds exactly two files:
+- `docker-compose.yml` — copied verbatim from this repo's `synology-seaf-cli/docker-compose.yml` (the source of truth).
+- `.env` (chmod 600) — the secrets, created from `.env.example`; values live in `/opt/seafile/CREDENTIALS.txt` on the Seafile server. Gitignored; never committed.
+
+Deploy, update, or recover — always the same:
+```bash
+cd /volume1/docker/seaf-cli
+sudo docker compose pull && sudo docker compose up -d
+```
+`env_file:` in the compose loads `.env` automatically — nothing to export, no flag to remember. Watchtower (in the `synology-monitor` stack) watches the `seaf-cli` container by name, so new `seaf-cli-latest` images auto-deploy within ~5 min; the manual `pull` only forces it sooner.
+
+### 2026-06-21 incident — what went wrong, and rules to never repeat it
+
+**What happened:** the stack had drifted into a personal home dir (`/volume1/homes/ahazan/seaf-cli-compose-codex.yml`) with credentials in a sibling `seaf-cli.env` that Compose did not auto-load. A `sudo docker compose up -d` (without `--env-file`) recreated the container with an empty environment — **`sudo` strips exported shell variables** — so it started with no login, hit `Bad configuration: Environment variable SEAF_USERNAME ... required`, and crash-looped. The stack was also **outside Watchtower's scope**, so image fixes never auto-deployed.
+
+**Rules:**
+- Deploy ONLY from `/volume1/docker/seaf-cli/` with a `.env` in that same folder. Never a home dir, never `/tmp` (wiped on reboot).
+- Never pass secrets through the shell environment + `sudo`. Put them in `.env`; `env_file:` makes Compose fail loudly if `.env` is missing instead of starting a broken container.
+- Keep `seaf-cli` in Watchtower's watch list (`deploy/synology/docker-compose.agent.yml` in `synology-monitor`).
+- The compose in this repo is the source of truth. Copy it to the NAS as-is; do not hand-maintain a separate `-codex` / `-tmp` variant.
 
 ## Live Container
 
@@ -221,29 +246,16 @@ To release a runtime change to `Dockerfile` or `entrypoint.py`:
 2. Wait for CI to pass: https://github.com/u2giants/seafile/actions
 3. Pull + recreate the container on edgesynology1.
 
-> **Important:** do the recreate over SSH from the VPS with `ssh edge1`. Docker's full path is `/var/packages/ContainerManager/target/usr/bin/docker`, and `/tmp` is wiped on reboot so the compose + `.env` usually need re-staging first.
-
-Self-contained recreate block (paste over SSH on **edgesynology1**; reads creds from the running container, so no secrets are typed). Stage the current `synology-seaf-cli/docker-compose.yml` as `/tmp/seaf-cli-compose-codex.yml` first and verify the service list is only `seaf-cli`:
+Watchtower auto-deploys new `seaf-cli-latest` images within ~5 min. To force it immediately, run on edgesynology1 from the canonical stack dir:
 
 ```bash
-DOCKER=/var/packages/ContainerManager/target/usr/bin/docker
-# Rebuild /tmp/.env from the running container's baked-in credentials (nothing typed)
-sudo -n $DOCKER inspect seaf-cli \
-  --format '{{range .Config.Env}}{{println .}}{{end}}' \
-  | grep -E '^(SEAF_USERNAME|SEAF_PASSWORD|SEAF_STATUS_TOKEN)=' | sudo -n tee /tmp/.env >/dev/null
-sudo -n $DOCKER compose -f /tmp/seaf-cli-compose-codex.yml --env-file /tmp/.env config --services
-sudo -n $DOCKER pull ghcr.io/u2giants/seafile:seaf-cli-latest
-sudo -n $DOCKER compose -f /tmp/seaf-cli-compose-codex.yml --env-file /tmp/.env up -d
+cd /volume1/docker/seaf-cli
+sudo docker compose pull && sudo docker compose up -d
 ```
 
-If Compose reports that `/seaf-cli` already exists, remove only that container and rerun `up -d`; the `seaf-cli-data` volume preserves sync state:
+There is nothing to stage and no secrets to type: the stack dir already holds `docker-compose.yml` and `.env`, and `env_file:` loads the creds. If `docker` is not on PATH, use the full Synology path `/var/packages/ContainerManager/target/usr/bin/docker`. `docker-compose.yml` changes (environment, volumes) only need the `up -d` step — no image rebuild required.
 
-```bash
-sudo -n $DOCKER rm -f seaf-cli
-sudo -n $DOCKER compose -f /tmp/seaf-cli-compose-codex.yml --env-file /tmp/.env up -d
-```
-
-`docker-compose.yml` changes (environment, volumes) only need the compose-up step — no image rebuild required.
+> Do NOT stage the compose under `/tmp` or a home dir, and do NOT pass creds with `--env-file /tmp/.env` or shell exports — that fragile pattern caused the 2026-06-21 crash-loop (see "2026-06-21 incident" above).
 
 ### Rollback
 
@@ -257,19 +269,15 @@ Find prior tags under the repo's GHCR package or in the GitHub Actions run histo
 
 ## Re-deploy after container removal
 
-The container has `restart: unless-stopped` — it survives reboots without needing the compose file on disk.
+The container has `restart: unless-stopped`, so it survives reboots on its own.
 
-If a container is manually removed:
-1. Write the compose file from this repo to `/tmp/seaf-cli-compose-codex.yml` on edgesynology1
-2. Write `/tmp/.env` with `SEAF_USERNAME` and `SEAF_PASSWORD` (see `/opt/seafile/CREDENTIALS.txt` on VPS)
-3. Pull the image and start:
+If the container is ever fully removed, recreate it from the canonical stack dir (the files persist there):
 ```bash
-DOCKER=/var/packages/ContainerManager/target/usr/bin/docker
-sudo -n $DOCKER pull ghcr.io/u2giants/seafile:seaf-cli-latest
-sudo -n $DOCKER compose -f /tmp/seaf-cli-compose-codex.yml --env-file /tmp/.env up -d
+cd /volume1/docker/seaf-cli
+sudo docker compose up -d
 ```
 
-Note: Docker on Synology is at `/var/packages/ContainerManager/target/usr/bin/docker` — not in PATH.
+If `/volume1/docker/seaf-cli/` itself is gone, rebuild it: copy `synology-seaf-cli/docker-compose.yml` from this repo into it, create `.env` from `.env.example` (values in `/opt/seafile/CREDENTIALS.txt`, then `chmod 600 .env`), and run `sudo docker compose up -d`. Docker on Synology is at `/var/packages/ContainerManager/target/usr/bin/docker` if not on PATH.
 
 ## Volume notes
 
