@@ -33,17 +33,16 @@ Risks / watchouts:
 ## seaf-cli deployment migration to /volume1/docker/seaf-cli
 
 Status:
-partial (repo done; NAS migration is a one-time operator action)
+done — migrated and verified on edgesynology1, 2026-06-21.
 
 Done:
-- `synology-seaf-cli/docker-compose.yml` updated to be the source of truth: loads secrets via `env_file: - .env`, drops shell-passthrough secret vars, marks `seaf-cli-data` `external: true`. `.env.example` corrected. README rewritten with canonical deploy + the 2026-06-21 incident.
-- `synology-monitor` `deploy/synology/docker-compose.agent.yml`: `seaf-cli` added to Watchtower's watch list.
+- `synology-seaf-cli/docker-compose.yml` is the source of truth: secrets via `env_file: - .env`, no shell-passthrough secret vars, `seaf-cli-data` `external: true`. `.env.example` + README (canonical deploy + 2026-06-21 incident) + AGENTS.md rule.
+- `synology-monitor` `deploy/synology/docker-compose.agent.yml`: `seaf-cli` added to Watchtower's command.
+- NAS migrated: stack now at `/volume1/docker/seaf-cli/` (`docker-compose.yml` + `.env`, chmod 600). Container force-recreated from the new dir; logs confirm creds auto-load (no `Bad configuration`) and all four libraries sync. Watchtower watch list verified `["synology-monitor-agent","synology-monitor-nas-api","seaf-cli"]`. Old `/volume1/homes/ahazan/seaf-cli-compose-codex.yml` + `seaf-cli.env` removed.
 
-Next action (operator, on edgesynology1 — one time):
-1. Create `/volume1/docker/seaf-cli/`, put this repo's `synology-seaf-cli/docker-compose.yml` there, and move the existing creds file to `/volume1/docker/seaf-cli/.env` (`chmod 600`).
-2. `cd /volume1/docker/seaf-cli && sudo docker compose down` is NOT needed; `sudo docker compose up -d` recreates the `seaf-cli` project in place. Then remove the old home-dir files (`/volume1/homes/ahazan/seaf-cli-compose-codex.yml`, `seaf-cli.env`).
-3. Apply the Watchtower change: `cd /volume1/docker/synology-monitor-agent && sudo docker compose -f compose.yaml up -d`.
+Remaining recurrence-prevention item (separate from the migration):
+- Host `fs.inotify.max_user_watches` is live at 1048576 but NOT persisted (absent from `/etc/sysctl.conf` and `/etc/sysctl.d/`). A reboot resets it to 8192 and silently reintroduces the false-"synchronized" bug. Fix: a DSM Task Scheduler **boot-up** task (root) running `sysctl -w fs.inotify.max_user_watches=1048576` and `sysctl -w fs.inotify.max_user_instances=1024`. DSM boot task is required because Synology does not reliably honor `/etc/sysctl.conf` at boot / across DSM updates.
 
-Risks / watchouts:
-- Never run `docker compose down -v` — it would delete the `seaf-cli-data` sync-state volume.
-- Deploy ONLY from `/volume1/docker/seaf-cli/` with a `.env` present; never from a home dir or `/tmp`, never via shell-exported creds + `sudo` (sudo strips them → empty env → crash-loop). This was the 2026-06-21 outage.
+Watchouts:
+- Never run `docker compose down -v` — it deletes the `seaf-cli-data` sync-state volume.
+- Deploy seaf-cli ONLY from `/volume1/docker/seaf-cli/` with a `.env` present; never a home dir or `/tmp`, never shell-exported creds + `sudo` (sudo strips them → empty env → crash-loop, the 2026-06-21 outage).
