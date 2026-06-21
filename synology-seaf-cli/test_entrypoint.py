@@ -72,7 +72,7 @@ c.libraries = {
 }
 c.target = Path(tempfile.mkdtemp())
 c.synchronize()
-expected_ignore = "@eaDir\n#recycle\n#snapshot\n@tmp\n.DS_Store\nThumbs.db\n*.tmp\n"
+expected_ignore = "@eaDir\n#recycle\n#snapshot\n@tmp\n.DS_Store\nThumbs.db\n*@SynoEAStream\n*@SynoResource\n*.tmp\n"
 check("ignore file is refreshed for already-synced repos",
       (c.target / "repo1" / "seafile-ignore.txt").read_text() == expected_ignore
       and (c.target / "repo2" / "seafile-ignore.txt").read_text() == expected_ignore)

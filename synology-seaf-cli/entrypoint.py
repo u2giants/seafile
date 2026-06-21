@@ -235,7 +235,7 @@ class Client:
 
     def _write_seafile_ignore(self, target: Path) -> None:
         ignore_file = target / "seafile-ignore.txt"
-        content = "@eaDir\n#recycle\n#snapshot\n@tmp\n.DS_Store\nThumbs.db\n*.tmp\n"
+        content = "@eaDir\n#recycle\n#snapshot\n@tmp\n.DS_Store\nThumbs.db\n*@SynoEAStream\n*@SynoResource\n*.tmp\n"
         try:
             current = ignore_file.read_text()
         except OSError:
