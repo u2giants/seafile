@@ -4,6 +4,8 @@ Infrastructure for the Seafile Pro file sync deployment serving POP Creations de
 
 8 designers in São Paulo access a file library that lives on Synology NAS devices in a NYC office. This repo contains everything to operate both sides of the system.
 
+> Internal: see [docs/1password.md](docs/1password.md) for 1Password access (MCP server + op CLI).
+
 ## Structure
 
 ```
