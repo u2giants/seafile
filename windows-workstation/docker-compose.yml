@@ -23,6 +23,7 @@ services:
   seaf-cli-char-licensed:
     image: ghcr.io/u2giants/seafile:seaf-cli-latest
     container_name: seaf-cli-char-licensed
+    entrypoint: ["/usr/bin/tini", "--", "/home/seafile/seaf-entrypoint.py"]
     restart: unless-stopped
     cpu_shares: 512
     deploy:
@@ -39,12 +40,14 @@ services:
       - SEAF_PASSWORD
       - SEAF_LIBRARY=177cf9de-3066-482e-956a-7ae8d8786c6d
       - SEAF_INGEST_DAYS=730
+      - SEAF_CLEAN_STAGING_ON_EXIT=true
       - SEAF_SETTINGS_URL=https://seafile.designflow.app/nas-settings/api/settings
       - SEAF_STATUS_TOKEN
 
   seaf-cli-generic-decor:
     image: ghcr.io/u2giants/seafile:seaf-cli-latest
     container_name: seaf-cli-generic-decor
+    entrypoint: ["/usr/bin/tini", "--", "/home/seafile/seaf-entrypoint.py"]
     restart: unless-stopped
     cpu_shares: 512
     deploy:
@@ -61,6 +64,7 @@ services:
       - SEAF_PASSWORD
       - SEAF_LIBRARY=1b116ab7-d66b-4411-a691-21f34eadb731
       - SEAF_INGEST_DAYS=730
+      - SEAF_CLEAN_STAGING_ON_EXIT=true
       - SEAF_SETTINGS_URL=https://seafile.designflow.app/nas-settings/api/settings
       - SEAF_STATUS_TOKEN
 

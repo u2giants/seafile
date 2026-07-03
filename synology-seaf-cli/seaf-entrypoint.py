@@ -29,6 +29,7 @@ import json
 import logging
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -46,6 +47,13 @@ SOURCE = Path('/source')
 LIBRARY = Path('/library')
 UPSTREAM = '/home/seafile/entrypoint.py'
 DEFAULT_IGNORE_DIRS = {"@eaDir"}
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def fetch_ingest_days_from_url(settings_url: str, library_uuid: str, fallback) -> object:
@@ -114,6 +122,49 @@ def _ignored_dir_names():
     if raw is None:
         return DEFAULT_IGNORE_DIRS
     return {name.strip() for name in raw.split(",") if name.strip()}
+
+
+def cleanup_staging(reason: str = "exit") -> dict:
+    """Remove all staged files from /library.
+
+    This is intended only for the Windows/CIFS deployment where /library is a
+    disposable Docker volume populated from /source. The caller must guard it
+    with SEAF_CLEAN_STAGING_ON_EXIT so the NAS bind-mount deployment is never
+    cleaned by accident.
+    """
+    if not LIBRARY.exists():
+        return {"files": 0, "dirs": 0, "errors": 0}
+
+    removed_files = 0
+    removed_dirs = 0
+    errors = 0
+    for root, dirs, files in os.walk(LIBRARY, topdown=False):
+        rp = Path(root)
+        for fname in files:
+            path = rp / fname
+            try:
+                path.unlink()
+                removed_files += 1
+            except OSError as exc:
+                errors += 1
+                log.warning("Cleanup skipped file %s: %s", path, exc)
+        for dirname in dirs:
+            path = rp / dirname
+            try:
+                path.rmdir()
+                removed_dirs += 1
+            except OSError as exc:
+                errors += 1
+                log.warning("Cleanup skipped directory %s: %s", path, exc)
+
+    log.info(
+        "Staging cleanup after %s — removed %d files and %d directories (%d errors)",
+        reason,
+        removed_files,
+        removed_dirs,
+        errors,
+    )
+    return {"files": removed_files, "dirs": removed_dirs, "errors": errors}
 
 
 def scan_source(days, ignored_dirs=None):
@@ -226,6 +277,34 @@ def refresh_loop(env_days, settings_url, library_uuid):
     threading.Thread(target=_run, daemon=True).start()
 
 
+def run_upstream() -> int:
+    clean_on_exit = env_bool("SEAF_CLEAN_STAGING_ON_EXIT")
+    cleanup_reason = "upstream exit"
+    child = subprocess.Popen([sys.executable, UPSTREAM])
+
+    def _stop(signum, _frame):
+        nonlocal cleanup_reason
+        cleanup_reason = f"signal {signum}"
+        log.info("Received signal %s — forwarding to upstream entrypoint", signum)
+        child.terminate()
+        try:
+            child.wait(timeout=45)
+        except subprocess.TimeoutExpired:
+            log.warning("Upstream entrypoint did not stop cleanly; killing it")
+            child.kill()
+            child.wait()
+        sys.exit(128 + signum)
+
+    signal.signal(signal.SIGTERM, _stop)
+    signal.signal(signal.SIGINT, _stop)
+
+    try:
+        return child.wait()
+    finally:
+        if clean_on_exit:
+            cleanup_staging(cleanup_reason)
+
+
 if __name__ == '__main__':
     raw = os.environ.get('SEAF_INGEST_DAYS', '').strip()
     env_days = int(raw) if raw else None
@@ -239,7 +318,6 @@ if __name__ == '__main__':
     days = resolve_ingest_days(env_days, settings_url, library_uuid)
     populate(days)
     refresh_loop(env_days, settings_url, library_uuid)
-    # Use subprocess.run instead of os.execv so the refresh_loop thread above
-    # keeps running hourly. os.execv would replace this process and kill the thread.
-    result = subprocess.run([sys.executable, UPSTREAM])
-    sys.exit(result.returncode)
+    # Keep this wrapper alive so the hourly refresh thread and signal cleanup
+    # remain active while the upstream entrypoint supervises seaf-daemon.
+    sys.exit(run_upstream())

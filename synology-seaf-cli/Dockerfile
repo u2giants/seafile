@@ -7,6 +7,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --chmod=755 entrypoint.py /home/seafile/entrypoint.py
+COPY --chmod=755 seaf-entrypoint.py /home/seafile/seaf-entrypoint.py
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/home/seafile/entrypoint.py"]
 HEALTHCHECK --interval=60s --timeout=10s --start-period=60s --retries=3 \
