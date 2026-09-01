@@ -77,7 +77,7 @@ roughly every 30 seconds is expected for each synced library.
 
 ## seaf-cli Container
 
-The seaf-cli container uses `ghcr.io/u2giants/seafile:seaf-cli-latest`. It can run on the NAS or on the Windows workstation — see `docs/architecture.md` for the comparison. Both deployments use the same image; only the source volume type differs.
+The seaf-cli container uses `ghcr.io/u2giants/seafile:seaf-cli-latest` and runs on the `edgesynology1` NAS.
 
 Currently running on: **NAS (edgesynology1)**.
 
@@ -139,66 +139,6 @@ DOCKER=/var/packages/ContainerManager/target/usr/bin/docker
 sudo -n $DOCKER compose -f /tmp/seaf-cli-compose-codex.yml --env-file /tmp/.env up -d
 ```
 
-### Windows workstation deployment
-
-The Windows compose still reflects the older per-library/CIFS layout and was not validated during the 2026-06-11 NAS recovery. Treat this cutover as a separate migration: inspect `windows-workstation/docker-compose.yml` against the current `synology-seaf-cli/entrypoint.py` before stopping the NAS container.
-
-Prerequisites on the Windows machine: WSL2 enabled, Docker Desktop installed with "Start Docker Desktop when you log in" enabled.
-
-```powershell
-# Run once as Administrator from the windows-workstation/ directory
-.\setup.ps1
-```
-
-`setup.ps1` installs the PopDAM Windows Agent (downloads from GitHub releases if not already present), writes `.env` credentials, starts the seaf-cli containers, and registers a login-triggered scheduled task.
-
-**Cutover procedure (switching from NAS to Windows):**
-1. Run `setup.ps1` on the Windows machine and verify `docker ps` shows the seaf-cli containers healthy
-2. Stop the NAS container over SSH on `edgesynology1`:
-```bash
-DOCKER=/var/packages/ContainerManager/target/usr/bin/docker
-sudo -n $DOCKER compose -f /tmp/seaf-cli-compose-codex.yml --env-file /tmp/.env stop
-```
-
-**Machine replacement:** Copy the `windows-workstation/` folder to the new machine, run `setup.ps1`. Sync state rebuilds from scratch (seaf-daemon re-hashes all files on first start — expect 200-300% CPU for several hours).
-
-**Credentials needed for setup.ps1:**
-- Seafile: `SEAF_USERNAME` / `SEAF_PASSWORD` — from `/opt/seafile/CREDENTIALS.txt` on VPS (nas-sync@popcre.com)
-- NAS SMB: `NAS_USERNAME` / `NAS_PASSWORD` — a Synology local account with read access to the `mac` shared folder on edgesynology1
-
----
-
-## First-Time Deployment
-
-Use `START_SEAFILE.sh` which runs pre-flight checks before starting:
-
-```bash
-sudo bash /opt/seafile/START_SEAFILE.sh
-```
-
-Pre-flight checks: DNS resolves to this server's IP, license file exists. Do not bypass these.
-
-**Prerequisites before first start:**
-1. DNS A record `seafile.designflow.app → 172.233.14.233` (DNS-only, no proxy)
-2. `/opt/seafile-data/seafile-license.txt` present
-3. `.env` fully configured (copy from `.env.example`, fill all values)
-
-## Updating Seafile
-
-1. Check https://manual.seafile.com for breaking changes between versions
-2. Edit `SEAFILE_IMAGE` in `/opt/seafile/.env`
-3. Pull and recreate:
-```bash
-cd /opt/seafile
-docker compose -f seafile-server.yml -f caddy.yml pull seafile
-docker compose -f seafile-server.yml -f caddy.yml up -d --force-recreate seafile
-docker logs -f seafile   # watch for "Seafile server started"
-```
-
-4. After a Seafile upgrade, diff the new `sysadmin/sysadmin_react_app.html` against the override in `seahub-data/custom/templates/` — the custom template is a full copy of Seafile's file plus the nav injection script, so upstream changes won't apply automatically.
-
-## Backup
-
 ### Automatic
 Daily cron at 3am dumps all MariaDB databases to `/opt/backups/seafile-db-YYYYMMDD.sql`. Files older than 30 days are deleted at 4am.
 
@@ -252,9 +192,6 @@ If renewal fails: verify DNS still resolves correctly and port 80 is reachable (
 ### NAS-agent image already picked up
 
 The 2026-06-11 recreate pulled `ghcr.io/u2giants/seafile:seaf-cli-latest` and started the single `seaf-cli` service from current compose. If a future status payload lacks fields such as `folder_size_cache`, or if new `@eaDir` content keeps uploading after `seafile-ignore.txt` is present, first verify the running image digest and that the active compose config contains only the `seaf-cli` service. `/tmp` is wiped on reboot, so `/tmp/seaf-cli-compose-codex.yml` and `/tmp/.env` may need re-staging before a future recreate.
-
-### Windows workstation cutover (optional)
-`windows-workstation/setup.ps1` exists but the cutover was not validated against the current single-container NAS sync model. Review the Windows compose/runtime path first. Only one host may run seaf-cli for a library at a time.
 
 ### Designer user accounts
 Send designers `https://seafile.designflow.app` — accounts are created automatically on first M365 SSO login (requires a POP Creations Microsoft account in the tenant). Albert then shares the relevant libraries via the web UI.

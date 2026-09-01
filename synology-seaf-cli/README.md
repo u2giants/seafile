@@ -2,7 +2,7 @@
 
 Syncs folders from the NYC Synology NAS to Seafile Pro at `seafile.designflow.app`. The current NAS deployment is one Docker container that syncs multiple libraries.
 
-**This is the NAS deployment.** An alternative Windows workstation deployment exists at `windows-workstation/` for running the same containers on a LAN-connected Windows machine via SMB mounts, offloading CPU from the NAS. Only one deployment should be active at a time.
+**This is the only seaf-cli deployment.** It runs on `edgesynology1`. Only one host may run seaf-cli for a library at a time — two clients syncing the same library concurrently corrupts sync state.
 
 **Status: the `seaf-cli` container runs on edgesynology1.**
 

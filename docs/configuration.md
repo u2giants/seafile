@@ -116,10 +116,10 @@ day set, and start/end time. End earlier than start means the window runs
 overnight. The NAS agent also accepts the previous one-window schedule shape for
 backward compatibility, but the panel now writes weekday/weekend windows.
 
-### NAS / Windows seaf-cli agent
+### NAS seaf-cli agent
 
-These environment variables are set in `synology-seaf-cli/docker-compose.yml`, the
-Windows workstation compose file, or the host env file used with those compose files:
+These environment variables are set in `synology-seaf-cli/docker-compose.yml` or the
+host env file used with it:
 
 | Variable | Purpose |
 |----------|---------|
@@ -257,23 +257,6 @@ Backs up all three MariaDB databases daily. Does **not** back up file data — t
 | UFW | 22, 80, 443 open | `ufw` |
 | Docker on boot | enabled | `systemctl enable docker` |
 | containerd on boot | enabled | `systemctl enable containerd` |
-
----
-
-## Windows Workstation — C:\ProgramData\seaf-cli\.env
-
-Written by `windows-workstation/setup.ps1` the first time it runs. Not committed to the repo. Contains:
-
-```
-SEAF_USERNAME=nas-sync@popcre.com
-SEAF_PASSWORD=<from /opt/seafile/CREDENTIALS.txt on VPS>
-NAS_USERNAME=<Synology local account with read access to mac share>
-NAS_PASSWORD=<that account's password>
-```
-
-`SEAF_USERNAME` and `SEAF_PASSWORD` are the same credentials used by the NAS containers. `NAS_USERNAME` and `NAS_PASSWORD` are Synology-specific — used by Docker's CIFS volume driver to mount `//edgesynology1/mac/Decor/…` into the containers. These do not exist in the NAS deployment (which uses local bind mounts instead).
-
-To change credentials: delete `C:\ProgramData\seaf-cli\.env` and re-run `setup.ps1`.
 
 ---
 

@@ -105,32 +105,6 @@ Monitoring seaf-daemon (PID N)
 sudo -n $DOCKER restart seaf-cli
 ```
 
-## Windows Workstation seaf-cli Container Debugging
-
-If seaf-cli is running on the Windows machine instead of the NAS, docker commands run locally in a standard terminal (no base64 encoding needed):
-
-```powershell
-# Check container status
-docker ps --filter name=seaf-cli
-
-# Tail logs
-docker logs --tail 100 seaf-cli-char-licensed
-docker logs --tail 100 seaf-cli-generic-decor
-
-# Health check status
-docker inspect --format="{{.State.Health.Status}}" seaf-cli-char-licensed
-
-# Run healthcheck manually
-docker exec seaf-cli-char-licensed python3 /home/seafile/entrypoint.py --healthcheck
-```
-
-**CIFS mount failures** (source files can't be read): Most common issue when first deploying to Windows. If the containers start but log errors accessing `/source`, check:
-1. `edgesynology1` resolves from inside Docker — if not, use the NAS IP in `C:\ProgramData\seaf-cli\docker-compose.yml`
-2. NAS credentials in `.env` are correct — test with `net use \\edgesynology1\mac /user:<username>` in a Windows terminal
-3. SMB version compatibility — `vers=3.0` is set in the compose file; if the NAS requires a different version, edit `driver_opts.o` in `docker-compose.yml`
-
-**Autostart not firing:** Check Task Scheduler → "seaf-cli autostart". If the task shows "Last result: 0x1", Docker Desktop may not have been ready. Check `C:\ProgramData\seaf-cli\autostart.log`. Ensure "Start Docker Desktop when you log in" is enabled in Docker Desktop settings.
-
 ## Troubleshooting
 
 **502 Bad Gateway** — Seafile is initialising. Normal for 3–5 minutes after first start. `docker logs -f seafile` and wait for "Seafile server started".

@@ -43,7 +43,6 @@ Project-owned code:
 
 - `seafile-server/nas-settings/` - Flask admin panel and tests for status, controls, config, libraries, ingest windows, sync schedules, and cached folder-size display.
 - `synology-seaf-cli/` - Docker wrapper image for `seaf-cli`, including staging, daemon supervision, status reporter, command dispatcher, schedule enforcement, and folder-size cache scanner.
-- `windows-workstation/` - Alternative seaf-cli host for a Windows machine using CIFS source mounts; not active unless explicitly cut over.
 - `seafile-server/custom-templates/` - Seahub template overrides for the Microsoft login button and admin-only NAS Sync links.
 
 Docs:
@@ -55,7 +54,7 @@ Docs:
 - `docs/development.md` - local setup, run/test/lint/debug workflow.
 - `docs/configuration.md` - environment variables, config files, feature flags.
 - `docs/deployment.md` - deploy/release/environment/rollback workflow.
-- Folder READMEs: `seafile-server/nas-settings/README.md`, `synology-seaf-cli/README.md`, `seafile-server/custom-templates/README.md`, `windows-workstation/README.md`.
+- Folder READMEs: `seafile-server/nas-settings/README.md`, `synology-seaf-cli/README.md`, `seafile-server/custom-templates/README.md`.
 - `HANDOFF.md` - temporary continuation doc only when work is unfinished, blocked, or partially deployed.
 
 Scripts:
@@ -63,13 +62,11 @@ Scripts:
 - `seafile-server/START_SEAFILE.sh` - VPS pre-flight/start helper.
 - `seafile-server/CONFIGURE_OAUTH.sh` - old one-time Google OAuth script; already applied historically and now obsolete for Microsoft SSO. Do not run.
 - `seafile-server/CREATE_NAS_SYNC_ACCOUNT.sh` - one-time machine-account script; do not rerun.
-- `windows-workstation/setup.ps1` - Windows workstation setup script.
 
 Deployment files:
 
 - `seafile-server/seafile-server.yml`, `seafile-server/caddy.yml`, `seafile-server/nas-settings.yml`.
 - `synology-seaf-cli/docker-compose.yml`.
-- `windows-workstation/docker-compose.yml`.
 - `.github/workflows/seaf-cli-image.yml`, `.github/workflows/nas-settings-image.yml`.
 
 Migrations:
@@ -90,7 +87,6 @@ Our custom code lives here:
 
 - `seafile-server/nas-settings/`
 - `synology-seaf-cli/`
-- `windows-workstation/`
 - `seafile-server/custom-templates/`
 - `seafile-server/*.yml`
 - `seafile-server/*.sh`
@@ -164,7 +160,7 @@ Do not casually rename, regenerate, or replace documented identifiers.
 | `seafile-redis` | Redis cache/session support | Docker Compose on VPS | none | `redis` |
 | `seafile-caddy` | Caddy reverse proxy and TLS | Docker Compose on VPS | none | `lucaslorentz/caddy-docker-proxy:2.12-alpine` |
 | `nas-settings` | Flask admin panel and NAS command/status API | Docker Compose on VPS, image from GitHub Actions | none | `ghcr.io/u2giants/seafile:nas-settings-latest` |
-| `seaf-cli` | Syncs Character Licensed, Generic Decor, Styleguides, and ArtLibrary NAS folders to Seafile | Docker Compose on `edgesynology1` NAS, or Windows alternative when cut over | none | `ghcr.io/u2giants/seafile:seaf-cli-latest` |
+| `seaf-cli` | Syncs Character Licensed, Generic Decor, Styleguides, and ArtLibrary NAS folders to Seafile | Docker Compose on `edgesynology1` NAS | none | `ghcr.io/u2giants/seafile:seaf-cli-latest` |
 
 There is no Coolify, Supabase, deploy app ID, or webhook deploy target for this project.
 
@@ -434,28 +430,26 @@ Never commit actual secret values.
 | `ENABLE_SEAFILE_AI` | AI feature toggle | `/opt/seafile/.env`, compose | no | yes |
 | `ENABLE_FACE_RECOGNITION` | Face recognition toggle | `/opt/seafile/.env`, compose | no | yes |
 | `NAS_SETTINGS_SECRET_KEY` | Flask session signing, passed as `SECRET_KEY` | `/opt/seafile/.env` | test value only | yes |
-| `NAS_STATUS_TOKEN` | Shared NAS status token, passed as `STATUS_TOKEN`/`SEAF_STATUS_TOKEN` | `/opt/seafile/.env` and NAS/Windows env | test value only | yes |
+| `NAS_STATUS_TOKEN` | Shared NAS status token, passed as `STATUS_TOKEN`/`SEAF_STATUS_TOKEN` | `/opt/seafile/.env` and NAS env | test value only | yes |
 | `SECRET_KEY` | Runtime env inside `nas-settings` | `seafile-server/nas-settings.yml` from `NAS_SETTINGS_SECRET_KEY` | yes for tests | yes |
 | `STATUS_TOKEN` | Runtime env inside `nas-settings` | `seafile-server/nas-settings.yml` from `NAS_STATUS_TOKEN` | yes for tests | yes |
 | `SEAFILE_INTERNAL_URL` | Internal Seafile URL for admin checks | `seafile-server/nas-settings.yml` | no | yes |
 | `SEAFILE_PUBLIC_HOST` | Public host used by panel | `seafile-server/nas-settings.yml` | no | yes |
-| `SEAF_SERVER_URL` | Seafile URL for seaf-cli | NAS/Windows compose/env | no | yes |
-| `SEAF_USERNAME` | seaf-cli account username | NAS `/tmp/.env` or Windows env | no | yes |
-| `SEAF_PASSWORD` | seaf-cli account password | NAS `/tmp/.env` or Windows env | no | yes |
+| `SEAF_SERVER_URL` | Seafile URL for seaf-cli | NAS compose/env | no | yes |
+| `SEAF_USERNAME` | seaf-cli account username | NAS `/tmp/.env` | no | yes |
+| `SEAF_PASSWORD` | seaf-cli account password | NAS `/tmp/.env` | no | yes |
 | `SEAF_TOKEN` | Optional seaf-cli auth token alternative | environment only if used | no | optional |
 | `SEAF_LIBRARY_<KEY>` | Multi-library UUID mapping; key maps to `/library/<key>` | NAS compose | no | yes |
-| `SEAF_LIBRARY` | Legacy single-library UUID; if set, multi-library vars are ignored | Windows/single-library env only | no | optional |
+| `SEAF_LIBRARY` | Legacy single-library UUID; if set, multi-library vars are ignored | single-library env only | no | optional |
 | `SEAF_LIBRARY_UUID` | Legacy seaf-cli library UUID env | code supports legacy | no | no |
 | `SEAF_LIBRARY_PASSWORD` | Optional encrypted-library password | environment only if used | no | optional |
-| `SEAF_SETTINGS_URL` | Panel settings endpoint for NAS agent | NAS/Windows compose | no | yes |
-| `SEAF_STATUS_TOKEN` | NAS agent status token | NAS/Windows env | no | yes |
+| `SEAF_SETTINGS_URL` | Panel settings endpoint for NAS agent | NAS compose | no | yes |
+| `SEAF_STATUS_TOKEN` | NAS agent status token | NAS env | no | yes |
 | `SEAF_UPLOAD_LIMIT` | Optional seaf-cli upload speed cap | environment only if used | no | optional |
 | `SEAF_DOWNLOAD_LIMIT` | Optional seaf-cli download speed cap | environment only if used | no | optional |
 | `SEAF_SKIP_SSL_CERT` | Optional TLS verification skip | environment only if used | no | optional |
 | `SEAF_2FA_SECRET` | Optional TOTP secret for seaf-cli auth | environment only if used | no | optional |
 | `DEBUG` | NAS agent debug logging | environment only if used | no | optional |
-| `NAS_USERNAME` | Windows CIFS NAS username | Windows workstation env | no | Windows only |
-| `NAS_PASSWORD` | Windows CIFS NAS password | Windows workstation env | no | Windows only |
 | `GITHUB_TOKEN` | GitHub Actions package publish token | GitHub Actions built-in secret | no | CI only |
 | `CF_TOKEN` | Cloudflare DNS API token | operator-provided, not committed | no | only for DNS changes |
 
@@ -555,7 +549,6 @@ Back up DB/config before destructive account or ownership changes; keep secrets 
 | open | Decide read-write sharing policy for all users | In GUI, create/use an all-users group and share both NAS libraries read-write; internal public shares are currently read-only |
 | open | Onboard POP Creations staff | Users sign in with Microsoft SSO; add them to the read-write group/share policy |
 | optional | Move NAS compose/env staging out of `/tmp` | Use a persistent NAS path such as `/volume1/docker/seaf-cli/` if an operator wants easier recreates |
-| optional | Windows workstation cutover | Run `windows-workstation/setup.ps1` and stop NAS containers first; only one seaf-cli deployment may run |
 | optional | Pin `flrnnc/seafile-client` base image by digest | Improves reproducibility but requires a documented bump procedure |
 | optional | Elasticsearch/full-text search | Requires RAM planning; current connection errors are expected because Elasticsearch is not deployed |
 <!-- ansible-host-policy: managed rollout from u2giants/ansible -->

@@ -21,7 +21,7 @@ Synology NAS ─── seaf-cli ──────►  seafile.designflow.app  �
 
 The VPS does not store file data on disk. All file blocks go to S3. The VPS disk holds only the database (MariaDB), Caddy TLS state, and application config.
 
-The seaf-cli containers can run on the Synology NAS (bind-mounting source folders directly) or on a Windows workstation on the same LAN (mounting the same folders over CIFS/SMB). Only one deployment should be active at a time — running both simultaneously causes two clients to sync the same library concurrently.
+The seaf-cli container runs on the Synology NAS (`edgesynology1`), bind-mounting the source folders directly. Only one host may run seaf-cli for a library at a time — two clients syncing the same library concurrently corrupts sync state.
 
 ## Docker Stack
 
@@ -109,18 +109,6 @@ Startup flow:
 ```
 
 `entrypoint.py` receives the current sync schedule on the 30-second status heartbeat, evaluates weekday and weekend windows in the configured timezone, toggles each repo's `auto-sync` property, and can build a cached recursive folder-size table nightly after 2 AM New York time or on command. `seafile-ignore.txt` suppresses Synology metadata and common temp files in synced library paths. It is hygiene only: Synology can regenerate local `@eaDir` trees and ignored directories may still consume inotify watches, so host inotify limits must still be sized correctly.
-
-### Deployment options
-
-| | NAS (`synology-seaf-cli/`) | Windows workstation (`windows-workstation/`) |
-|---|---|---|
-| Source mount | Local bind mount | CIFS named volume over LAN SMB |
-| CPU load | Runs on the NAS | Offloaded to Windows machine |
-| Setup | SSH from VPS with `ssh edge1`, then Synology Docker path | `setup.ps1` run once as Administrator |
-| entrypoint.py | Identical image | Identical image |
-| Docker image | Identical | Identical |
-
-Only one deployment should be active at a time. The NAS deployment is the verified live path. The Windows workstation compose still reflects the older CIFS/per-library layout; validate it against the current wrapper before any cutover.
 
 ### Process Supervision
 
