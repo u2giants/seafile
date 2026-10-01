@@ -313,14 +313,20 @@ non-root user does not change this; it was tested.
 `drive-nudge.sh` fixes it from the host: every 15 minutes, DSM Task Scheduler
 task **"seaf-cli Drive nudge"** (ID 13, root) runs
 `/volume1/docker/seaf-cli/drive-nudge.sh`. It finds root-owned items under the
-library roots changed since the previous run and renames each file (and each
-empty directory) to a temporary name and straight back from the host, which
-Drive registers. Content, ACLs, owner and mtime are untouched. State and a
-run log live in `/volume1/docker/seaf-cli/drive-nudge/`.
+library roots changed since the previous run, and every directory below a
+library root whose ctime changed, and renames each to a temporary name and
+straight back from the host, which Drive registers. A directory rename makes
+Drive re-read it, so deletes and renames made by seaf-cli inside it reach
+edgesynology2 too (proven 2026-10-01). Content, ACLs, owner and mtime are
+untouched; the library roots themselves are never renamed; recorded ctimes
+stop the nudge's own changes from cascading upward. State and a run log live
+in `/volume1/docker/seaf-cli/drive-nudge/`.
 
-Known limit: deletions and renames made by seaf-cli are not nudged (the item
-is gone), so they still do not reach edgesynology2. The synology-monitor
-`replica_parity` alert only catches items missing on the replica, not extras.
+Known limit: a delete or rename of an item that sits directly in a library
+root (e.g. a top-level folder of `Generic Decor`) is not propagated, because
+the library root itself is never renamed. Directories changed by SMB users are
+renamed-and-back too (about 16 an hour measured); the window is a few
+milliseconds.
 
 Deploy/update: copy this file to `/volume1/docker/seaf-cli/drive-nudge.sh`
 (root:root 0755). The scheduled task points at that path.
