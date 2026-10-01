@@ -301,3 +301,26 @@ python3 synology-seaf-cli/test_entrypoint.py
 | Seafile server | https://seafile.designflow.app |
 | Sync account | nas-sync@popcre.com |
 | Password | `/opt/seafile/CREDENTIALS.txt` on VPS |
+
+## Drive nudge (edgesynology1) — required for ShareSync
+
+Synology Drive does not see writes made inside a container (it watches the
+host mount of each share; Docker bind mounts are separate mounts). Without help,
+files that seaf-cli downloads never reach the edgesynology2 ShareSync replica
+(2026-10-01: 1,646 items missed since 2026-09-17). Running seaf-cli as a
+non-root user does not change this; it was tested.
+
+`drive-nudge.sh` fixes it from the host: every 15 minutes, DSM Task Scheduler
+task **"seaf-cli Drive nudge"** (ID 13, root) runs
+`/volume1/docker/seaf-cli/drive-nudge.sh`. It finds root-owned items under the
+library roots changed since the previous run and renames each file (and each
+empty directory) to a temporary name and straight back from the host, which
+Drive registers. Content, ACLs, owner and mtime are untouched. State and a
+run log live in `/volume1/docker/seaf-cli/drive-nudge/`.
+
+Known limit: deletions and renames made by seaf-cli are not nudged (the item
+is gone), so they still do not reach edgesynology2. The synology-monitor
+`replica_parity` alert only catches items missing on the replica, not extras.
+
+Deploy/update: copy this file to `/volume1/docker/seaf-cli/drive-nudge.sh`
+(root:root 0755). The scheduled task points at that path.
