@@ -20,6 +20,11 @@
 #     seaf-cli inside a directory only shows as that directory's ctime change,
 #     and a host-side rename of the directory makes Drive re-read it, so the
 #     delete/rename reaches edgesynology2 (proven 2026-10-01).
+#   - DIRECT CHILDREN of a library root that disappeared since the last run:
+#     a delete/rename there would need the root itself re-read, and renaming a
+#     root would make Drive re-walk the whole library. Instead the vanished name
+#     is briefly re-created from the host (same type) and removed again, which
+#     Drive sees as a delete and passes to edgesynology2 (proven 2026-10-01).
 # Content, owner, ACL, mode and mtime are unchanged. The library roots and their
 # ancestors are never renamed. After each run the ctime of every nudged item
 # and of its parent is recorded; an item whose ctime still equals the recorded
@@ -79,6 +84,26 @@ for pass in files dirs; do
       [ "$pass" = files ] && [ "$(stat -c %U -- "$p")" = root ] && nudge "$p"
     fi
   done < "$STATE/found"
+done
+
+# Vanished direct children of each library root -> host-side ghost delete.
+echo "$ROOTS" | while IFS= read -r root; do
+  [ -d "$root" ] || continue
+  key=$(printf '%s' "$root" | md5sum | cut -c1-12)
+  cur="$STATE/top-$key.new"; prev="$STATE/top-$key"
+  find "$root" -mindepth 1 -maxdepth 1 -printf '%y\t%f\n' 2>/dev/null | grep -v -E '\s(@eaDir|#recycle|#snapshot|\.SynologyWorkingDirectory)$' | grep -v '\.drive-nudge\.' | sort > "$cur"
+  if [ -f "$prev" ]; then
+    cut -f2 "$cur" > "$cur.names"
+    while IFS='	' read -r ty name; do
+      grep -q -x -F -- "$name" "$cur.names" && continue
+      g="$root/$name"
+      [ -e "$g" ] || [ -L "$g" ] && continue
+      if [ "$ty" = d ]; then mkdir -- "$g" && rmdir -- "$g"; else : > "$g" && rm -f -- "$g"; fi
+      echo "$(date '+%F %T') ghost-delete $g" >> "$STATE/log"
+    done < "$prev"
+    rm -f "$cur.names"
+  fi
+  mv "$cur" "$prev"
 done
 
 sort -u "$STATE/done" | while IFS= read -r p; do

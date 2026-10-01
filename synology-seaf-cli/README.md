@@ -322,9 +322,12 @@ untouched; the library roots themselves are never renamed; recorded ctimes
 stop the nudge's own changes from cascading upward. State and a run log live
 in `/volume1/docker/seaf-cli/drive-nudge/`.
 
-Known limit: a delete or rename of an item that sits directly in a library
-root (e.g. a top-level folder of `Generic Decor`) is not propagated, because
-the library root itself is never renamed. Directories changed by SMB users are
+Deletes and renames directly in a library root (e.g. a top-level folder of
+`Generic Decor`) are handled without renaming the root (which would make Drive
+re-walk the whole library): each run keeps a listing of every root's direct
+children, and a name that vanished is briefly re-created from the host (same
+type) and removed again, which Drive passes on as a delete (proven
+2026-10-01). Directories changed by SMB users are
 renamed-and-back too (about 16 an hour measured); the window is a few
 milliseconds.
 
