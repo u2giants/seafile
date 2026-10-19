@@ -39,6 +39,7 @@ sudo docker compose pull && sudo docker compose up -d
 | `seaf-cli` | `/volume1/mac/Decor/Generic Decor` | `/library/decor` | Generic Decor | `1b116ab7-d66b-4411-a691-21f34eadb731` |
 | `seaf-cli` | `/volume1/styleguides` | `/library/guides` | Styleguides | `b6e1d4c9-434e-4d8a-bde2-7f19be9c0838` |
 | `seaf-cli` | `/volume1/mac/Art Library` | `/library/art` | ArtLibrary | `d28d5118-e991-431a-be3d-2e6a15246479` |
+| `seaf-cli` | `/volume1/files/shared` | `/library/shared` | shared | `0eac5726-a5b4-4fc4-a1a3-00e87048f5b6` |
 
 ## Image
 

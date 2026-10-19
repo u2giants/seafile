@@ -75,6 +75,11 @@ LIBRARIES = [
         "name": "ArtLibrary",
         "uuid": "d28d5118-e991-431a-be3d-2e6a15246479",
     },
+    {
+        "id": "seaf-cli-shared",
+        "name": "Shared",
+        "uuid": "0eac5726-a5b4-4fc4-a1a3-00e87048f5b6",
+    },
 ]
 
 SETTINGS_PATH = Path("/data/settings.json")

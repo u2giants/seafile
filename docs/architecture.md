@@ -89,6 +89,8 @@ The NAS compose file bind-mounts each source folder directly under `/library/<ke
 /library/char    ← /volume1/mac/Decor/Character Licensed
 /library/decor   ← /volume1/mac/Decor/Generic Decor
 /library/guides  ← /volume1/styleguides
+/library/art     ← /volume1/mac/Art Library
+/library/shared  ← /volume1/files/shared
 ```
 
 `entrypoint.py` discovers `SEAF_LIBRARY_<KEY>` variables, lowercases each key, and syncs that UUID to `/library/<key>`. The old `SEAF_LIBRARY` single-library mode still exists for compatibility, but if it is set the multi-library variables are intentionally ignored.

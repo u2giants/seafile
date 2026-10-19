@@ -52,6 +52,7 @@ services:
       - /volume1/mac/Decor/Generic Decor:/library/decor:rw
       - /volume1/styleguides:/library/guides:rw
       - /volume1/mac/Art Library:/library/art:rw
+      - /volume1/files/shared:/library/shared:rw
       - seaf-cli-data:/seafile
     # Non-secret config is tracked here in the repo (source of truth).
     environment:
@@ -60,6 +61,7 @@ services:
       - SEAF_LIBRARY_DECOR=1b116ab7-d66b-4411-a691-21f34eadb731
       - SEAF_LIBRARY_GUIDES=b6e1d4c9-434e-4d8a-bde2-7f19be9c0838
       - SEAF_LIBRARY_ART=d28d5118-e991-431a-be3d-2e6a15246479
+      - SEAF_LIBRARY_SHARED=0eac5726-a5b4-4fc4-a1a3-00e87048f5b6
       - SEAF_SETTINGS_URL=https://seafile.designflow.app/nas-settings/api/settings
 
 volumes:
