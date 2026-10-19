@@ -27,6 +27,8 @@ except Exception:
 
 DAEMON_START_TIMEOUT = 60  # seconds to wait for socket after seaf-cli start
 INIT_TIMEOUT = 30          # seconds to wait for .ini after seaf-cli init
+SYNC_ATTEMPTS = 5          # tries per library for `seaf-cli sync` to register
+SYNC_REGISTER_TIMEOUT = 30 # seconds to wait for each try to show up in the daemon
 WATCHDOG_INTERVAL_SECONDS = 10
 STATUS_REPORT_INTERVAL_SECONDS = 30
 FOLDER_SIZE_SCAN_HOUR = 2
@@ -276,10 +278,40 @@ class Client:
             safe = ["***" if a in secrets else a for a in command]
             logger.debug(f"Running: {' '.join(safe)}")
 
-            self._clear_failed_clone_task(uuid)
-            result = subprocess.run(command)
-            if result.returncode != 0:
-                logger.error(f"`seaf-cli sync` for library {name!r} failed (exit {result.returncode})")
+            # seaf-daemon drops clone requests that arrive before it has finished
+            # starting ("System not started, skip adding clone task") while
+            # `seaf-cli sync` still exits 0. Verify the library actually registered
+            # and retry; never assume a zero exit code means it worked.
+            for attempt in range(1, SYNC_ATTEMPTS + 1):
+                self._clear_failed_clone_task(uuid)
+                result = subprocess.run(command)
+                if result.returncode != 0:
+                    logger.error(f"`seaf-cli sync` for library {name!r} failed (exit {result.returncode})")
+                elif self._wait_for_sync_registered(uuid, SYNC_REGISTER_TIMEOUT):
+                    logger.info(f"Library {name} registered with seaf-daemon.")
+                    break
+                else:
+                    logger.warning(f"Library {name} did not register with seaf-daemon "
+                                   f"(attempt {attempt}/{SYNC_ATTEMPTS}); retrying.")
+            else:
+                logger.error(f"Library {name!r} ({uuid}) FAILED to register with seaf-daemon "
+                             f"after {SYNC_ATTEMPTS} attempts — it is NOT syncing.")
+
+    def _wait_for_sync_registered(self, repo_id: str, timeout: int) -> bool:
+        """True once the daemon knows the repo, either as a synced repo or a clone task."""
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                if self.rpc.get_repo(repo_id) is not None:
+                    return True
+                if any(getattr(t, "repo_id", "") == repo_id and getattr(t, "state", "") != "error"
+                       for t in self.rpc.get_clone_tasks()):
+                    return True
+            except Exception as exc:
+                logger.debug(f"Checking registration for {repo_id} failed: {exc}")
+            if time.monotonic() > deadline:
+                return False
+            time.sleep(1)
 
     def _clear_failed_clone_task(self, repo_id: str) -> bool:
         """Remove a stale failed clone task so seaf-cli can retry the library.

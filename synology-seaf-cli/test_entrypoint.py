@@ -243,5 +243,34 @@ try:
 finally:
     subprocess.run = _orig
 
+# synchronize retries when seaf-daemon silently drops the clone request.
+class FakeSyncRpc:
+    def __init__(self, register_on):
+        self.calls = 0; self.register_on = register_on; self.registered = False
+    def get_repo(self, rid): return None
+    def get_clone_tasks(self):
+        return [FakeCloneTask("new-repo", "fetch")] if self.registered else []
+sync_runs = []
+def _sync_run(cmd, *a, **k):
+    if "sync" in cmd:
+        sync_runs.append(cmd)
+        if len(sync_runs) >= c.rpc.register_on: c.rpc.registered = True
+    return _P()
+_saved = (c.rpc, c.libraries, ep.SYNC_REGISTER_TIMEOUT, c._clear_failed_clone_task)
+c._clear_failed_clone_task = lambda rid: False
+ep.SYNC_REGISTER_TIMEOUT = 0
+c.mfa_secret = None
+c.rpc = FakeSyncRpc(register_on=2); c.libraries = {"newlib": {"uuid": "new-repo"}}
+subprocess.run = _sync_run
+try:
+    c.synchronize()
+    check("sync retried until daemon registers the library", len(sync_runs) == 2)
+    sync_runs.clear(); c.rpc = FakeSyncRpc(register_on=99)
+    c.synchronize()
+    check("sync gives up after SYNC_ATTEMPTS", len(sync_runs) == ep.SYNC_ATTEMPTS)
+finally:
+    subprocess.run = _orig
+    c.rpc, c.libraries, ep.SYNC_REGISTER_TIMEOUT, c._clear_failed_clone_task = _saved
+
 print(f"\n{sum(PASS)}/{len(PASS)} checks passed")
 sys.exit(0 if all(PASS) else 1)
