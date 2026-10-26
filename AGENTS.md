@@ -284,7 +284,7 @@ Looks like:
 GitHub Actions or the NAS MCP should recreate containers after image publish, or the old per-library container names should be managed directly.
 
 Actually:
-CI only publishes images. From the VPS, `ssh edge1` logs in to `edgesynology1` as `ai`; Docker requires `sudo -n /var/packages/ContainerManager/target/usr/bin/docker`. The live NAS deployment is the single `seaf-cli` container from `synology-seaf-cli/docker-compose.yml`.
+CI only publishes images. From the VPS, `ssh edge1` logs in to `edgesynology1` as `ai`, but the `ai` account has NO passwordless sudo (the old docker sudoers drop-in was wiped by a DSM update). Owner ruling 2026-10-26 (verbatim: "i'm not going to restore AI admin access on the NAS"): AI admin access on the NAS will NOT be restored; do not ask again. NAS-side Docker operations (compose pull/up) are run by the owner when requested; stage the file changes first (the `ai` account owns `/volume1/docker/seaf-cli/`), then hand the owner the exact command. Routine updates still deploy themselves via Watchtower; the panel's memory-limit control needs no NAS access at runtime. The live NAS deployment is the single `seaf-cli` container from `synology-seaf-cli/docker-compose.yml`.
 
 Why:
 There is no deploy platform. The `ai` account has a narrow sudoers drop-in for the Synology Docker binary, and old staged files such as `/tmp/seaf-cli-compose.yml` may still describe obsolete per-library containers.
@@ -489,7 +489,7 @@ Real deployment path:
 - Deploy trigger: manual pull/recreate on the target host after CI succeeds. There is no Coolify, deploy webhook, or app/project ID.
 - VPS stack: Docker Compose from `/opt/seafile` plus repo files in `/home/ai/seafile-repo/seafile-server/`.
 - `nas-settings` deploy: from `/opt/seafile`, run compose with `--env-file /opt/seafile/.env -f /home/ai/seafile-repo/seafile-server/nas-settings.yml`; do not build on the VPS.
-- NAS deploy: SSH from the VPS with `ssh edge1`, stage the current `synology-seaf-cli/docker-compose.yml` as `/tmp/seaf-cli-compose-codex.yml` or another verified current path, rebuild `/tmp/.env` from the running `seaf-cli` container if needed, pull `ghcr.io/u2giants/seafile:seaf-cli-latest`, then run Docker Compose with `sudo -n /var/packages/ContainerManager/target/usr/bin/docker`.
+- NAS deploy: SSH from the VPS with `ssh edge1`, stage the current `synology-seaf-cli/docker-compose.yml` as `/tmp/seaf-cli-compose-codex.yml` or another verified current path, rebuild `/tmp/.env` from the running `seaf-cli` container if needed, pull `ghcr.io/u2giants/seafile:seaf-cli-latest`, then give the owner the exact `docker compose pull && docker compose up -d` command to run (the `ai` account cannot sudo; owner ruling 2026-10-26).
 - Rollback: pin the affected service image to an older immutable `sha-<commit>` or `nas-settings-sha-<commit>` tag and recreate.
 - Runtime environment variable values live in `/opt/seafile/.env` on the VPS and `/tmp/.env` on the NAS. `/tmp` is wiped on NAS reboot; running containers survive via Docker restart policy, but recreates may need restaging.
 - SSH is allowed for manual operator work on VPS/NAS. SSH is not a CI deployment path; GitHub Actions must not SSH to production or run Docker there.
