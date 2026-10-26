@@ -155,6 +155,11 @@ TIME_ZONE = 'America/Sao_Paulo'
 
 ENABLE_OAUTH = True
 OAUTH_ENABLE_INSECURE_TRANSPORT = False
+# Unknown SSO identities are never auto-created: they get "registration is
+# not allowed" instead of silently creating an account over the 10-user
+# license cap (see AGENTS.md 2026-10-26 incident). Onboard via pre-create
+# + social_auth_usersocialauth link before first sign-in.
+REMOTE_USER_CREATE_UNKNOWN_USER = False
 OAUTH_CLIENT_ID = '<see CREDENTIALS.txt on VPS>'
 OAUTH_CLIENT_SECRET = '<see CREDENTIALS.txt on VPS>'
 OAUTH_REDIRECT_URL = 'https://seafile.designflow.app/oauth/callback/'
