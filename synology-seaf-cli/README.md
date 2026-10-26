@@ -1,5 +1,7 @@
 # Synology seaf-cli — NAS Sync
 
+Shared NAS operating guidance also lives in [`albert-standards/synology/runbooks/seafile-sync-inotify.md`](https://github.com/u2giants/albert-standards/blob/main/synology/runbooks/seafile-sync-inotify.md). Update it when sync topology, inotify limits, ignore-file behavior, or NAS operating assumptions change here.
+
 Syncs folders from the NYC Synology NAS to Seafile Pro at `seafile.designflow.app`. The current NAS deployment is one Docker container that syncs multiple libraries.
 
 **This is the only seaf-cli deployment.** It runs on `edgesynology1`. Only one host may run seaf-cli for a library at a time — two clients syncing the same library concurrently corrupts sync state.
@@ -59,6 +61,7 @@ The container runs `entrypoint.py` directly under `tini`:
 - Reports status every 30 seconds, executes queued panel commands, and applies the current weekday/weekend schedule by toggling per-repo `auto-sync`
 - Independently verifies each synchronized repo by comparing Seafile commit heads, monitoring inotify health, scanning daemon watch errors, and round-tripping a sync canary file
 - Rebuilds cached recursive source-folder sizes nightly after 2 AM New York time, or immediately when the panel queues `refresh_folder_sizes`
+- Reports and applies the `seaf-cli` container memory limit through the Docker socket when the NAS Settings panel queues `set_memory_limit`
 - Watchdog loop: polls `seaf-daemon`'s PID every 10 seconds; calls `sys.exit(1)` if it dies
 
 ```
@@ -130,6 +133,13 @@ Schedule changes are handed to the container on the next 30-second status heartb
 and are enforced by toggling the synced repo's `auto-sync` property. Weekday and
 weekend windows are separate; an end time earlier than the start time means the
 window runs overnight.
+
+The same Settings page controls the live `seaf-cli` container memory limit. The
+current operating target is `8g`; `0` means unlimited. Runtime changes require
+`/var/run/docker.sock` to be mounted into the container and are applied on the
+next heartbeat via Docker's container update API. If the socket is not mounted,
+the dashboard keeps the configured value but the limit takes effect only after
+the next container recreate from the compose file.
 
 On each sync startup, the wrapper writes or refreshes `seafile-ignore.txt` in each library path. That ignore file includes Synology metadata directories
 such as `@eaDir` plus common temporary files.
@@ -284,6 +294,7 @@ If `/volume1/docker/seaf-cli/` itself is gone, rebuild it: copy `synology-seaf-c
 
 - `seaf-cli-data` volume (`/seafile`) — seaf-daemon state, sync metadata, failed-clone database, and cached folder-size data. Deleting forces a full re-sync on next start.
 - `/library/<key>` paths are live NAS bind mounts, not disposable staging volumes.
+- The Windows workstation compose is different: it runs `seaf-entrypoint.py`, copies CIFS `/source` data into disposable `/library` staging volumes, and enables `SEAF_CLEAN_STAGING_ON_EXIT=true` so those copies are removed on container stop.
 
 ## Tests
 

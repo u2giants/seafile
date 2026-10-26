@@ -66,6 +66,9 @@ r = client.post("/api/command", json={"library_uuid": CHAR, "verb": "verify_now"
 check("verify_now command accepted", r.status_code == 200 and r.get_json().get("ok"))
 r = client.post("/api/command", json={"library_uuid": CHAR, "verb": "write_canary"})
 check("write_canary command accepted", r.status_code == 200 and r.get_json().get("ok"))
+r = client.post("/api/command", json={"library_uuid": CHAR, "verb": "set_memory_limit",
+                                       "args": {"memory_limit": "8g"}})
+check("set_memory_limit command accepted", r.status_code == 200 and r.get_json().get("ok"))
 
 print("== status POST: uuid routing, command handback, result persist ==")
 r = client.post("/api/status", json={"library_uuid": CHAR, "container_id": "abc123",
@@ -109,6 +112,7 @@ client.post("/", data={
     "schedule_timezone_seaf-cli-char-licensed": "America/New_York",
     "preset_seaf-cli-generic-decor": "730",
     "schedule_timezone_seaf-cli-generic-decor": "America/New_York",
+    "container_memory_limit": "6g",
 }, base_url=BASE)
 r = client.get("/api/settings")
 check("/api/settings returns lib uuid",
@@ -129,6 +133,14 @@ legacy = nas.normalize_schedule({
 check("legacy schedule normalizes to windows",
       legacy["windows"]["weekdays"]["start"] == "20:00"
       and legacy["windows"]["weekends"]["enabled"] is False)
+settings = nas.load_settings()
+check("container memory setting persisted",
+      settings[nas.CONTAINER_SETTINGS_KEY]["memory_limit"] == "6g")
+queued = nas.load_commands().get(CHAR, [])
+check("memory limit change queued",
+      any(cmd.get("verb") == "set_memory_limit"
+          and cmd.get("args", {}).get("memory_limit") == "6g"
+          for cmd in queued))
 
 print(f"\n{sum(PASS)}/{len(PASS)} checks passed")
 sys.exit(0 if all(PASS) else 1)

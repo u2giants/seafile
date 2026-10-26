@@ -454,6 +454,7 @@ Never commit actual secret values.
 | `SEAF_LIBRARY_PASSWORD` | Optional encrypted-library password | environment only if used | no | optional |
 | `SEAF_SETTINGS_URL` | Panel settings endpoint for NAS agent | NAS compose | no | yes |
 | `SEAF_STATUS_TOKEN` | NAS agent status token | NAS env | no | yes |
+| `SEAF_CONTAINER_NAME` | Container identifier for the panel memory-limit update API | environment only if used; defaults to hostname | no | optional |
 | `SEAF_UPLOAD_LIMIT` | Optional seaf-cli upload speed cap | environment only if used | no | optional |
 | `SEAF_DOWNLOAD_LIMIT` | Optional seaf-cli download speed cap | environment only if used | no | optional |
 | `SEAF_SKIP_SSL_CERT` | Optional TLS verification skip | environment only if used | no | optional |
