@@ -134,12 +134,22 @@ and are enforced by toggling the synced repo's `auto-sync` property. Weekday and
 weekend windows are separate; an end time earlier than the start time means the
 window runs overnight.
 
-The same Settings page controls the live `seaf-cli` container memory limit. The
-current operating target is `8g`; `0` means unlimited. Runtime changes require
-`/var/run/docker.sock` to be mounted into the container and are applied on the
-next heartbeat via Docker's container update API. If the socket is not mounted,
-the dashboard keeps the configured value but the limit takes effect only after
-the next container recreate from the compose file.
+The same Settings page controls the live `seaf-cli` container memory limit
+(values like `8g`, `4096m`, unit required, or `0` for unlimited; invalid input
+is rejected and keeps the previous value). The default is `8g` — a quarter of
+the NAS's 32 GB RAM, raised from 2g to bound sync memory without starving DSM.
+Runtime changes require `/var/run/docker.sock` to be mounted into the container
+and are applied on the next heartbeat via Docker's container update API, which
+also pins swap to 2x the memory limit (matching the compose default; compose
+sets no `memswap_limit`). If the socket is not mounted, the dashboard keeps the
+configured value but the limit takes effect only after the next container
+recreate from the compose file — and a recreate always resets the limit to the
+compose value, which then wins until the panel value is re-saved.
+
+**Security note:** the docker.sock mount grants this container root-equivalent
+control of Docker on the NAS host (it already runs as root with the live
+library mounts). Only two read/update routes are used; the recorded decision
+and blast radius live in `AGENTS.md` → "Intentional quirks".
 
 On each sync startup, the wrapper writes or refreshes `seafile-ignore.txt` in each library path. That ignore file includes Synology metadata directories
 such as `@eaDir` plus common temporary files.

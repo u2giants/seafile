@@ -592,6 +592,7 @@ class Client:
         class UnixHTTPConnection(http.client.HTTPConnection):
             def connect(self_inner):
                 self_inner.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                self_inner.sock.settimeout(self_inner.timeout)
                 self_inner.sock.connect(str(DOCKER_SOCKET))
 
         payload = json.dumps(body).encode() if body is not None else None
@@ -602,6 +603,10 @@ class Client:
             resp = conn.getresponse()
             text = resp.read().decode(errors="replace")
             return resp.status, text
+        except socket.timeout as exc:
+            # The reporter loop is single-threaded: a wedged dockerd must
+            # raise here, not block heartbeats and command delivery forever.
+            raise RuntimeError("docker socket request timed out") from exc
         finally:
             conn.close()
 
@@ -636,6 +641,9 @@ class Client:
         name = self._container_name()
         if not name:
             raise RuntimeError("container name unavailable")
+        # Docker rejects Memory > MemorySwap, and the compose file sets no
+        # memswap limit (Docker's default is 2x memory), so every update
+        # pins swap to that same 2x convention; 0 means unlimited for both.
         body = {
             "Memory": memory,
             "MemorySwap": memory * 2 if memory > 0 else 0,

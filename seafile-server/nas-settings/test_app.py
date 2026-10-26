@@ -142,5 +142,27 @@ check("memory limit change queued",
           and cmd.get("args", {}).get("memory_limit") == "6g"
           for cmd in queued))
 
+print("== settings POST: invalid memory limit is rejected, not coerced ==")
+r = client.post("/", data={
+    "preset_seaf-cli-char-licensed": "730",
+    "schedule_timezone_seaf-cli-char-licensed": "America/New_York",
+    "preset_seaf-cli-generic-decor": "730",
+    "schedule_timezone_seaf-cli-generic-decor": "America/New_York",
+    "container_memory_limit": "16 g",
+}, base_url=BASE)
+check("invalid memory limit shows error",
+      r.status_code == 200 and "Invalid memory limit" in r.get_data(as_text=True))
+settings = nas.load_settings()
+check("invalid memory limit keeps previous value",
+      settings[nas.CONTAINER_SETTINGS_KEY]["memory_limit"] == "6g")
+queued_after = nas.load_commands().get(CHAR, [])
+check("invalid memory limit queues nothing",
+      len(queued_after) == len(queued))
+check("bare number without unit is invalid",
+      nas._normalize_memory_limit("8192") is None
+      and nas._normalize_memory_limit("8g") == "8g"
+      and nas._normalize_memory_limit("0") == "0"
+      and nas._normalize_memory_limit("") is None)
+
 print(f"\n{sum(PASS)}/{len(PASS)} checks passed")
 sys.exit(0 if all(PASS) else 1)

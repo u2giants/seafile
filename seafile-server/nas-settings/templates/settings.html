@@ -71,6 +71,17 @@
       line-height: 1.5;
     }
 
+    .banner-error {
+      background: #fef2f2;
+      border: 1px solid #fca5a5;
+      border-radius: 8px;
+      color: #b91c1c;
+      font-size: 0.9rem;
+      padding: 14px 18px;
+      margin-bottom: 24px;
+      line-height: 1.5;
+    }
+
     /* Library card */
     .card {
       background: #fff;
@@ -295,6 +306,12 @@
     <h1 class="page-heading">Ingest Window & Schedule</h1>
     <p class="page-sub">Control which NAS files are eligible, and when each library is allowed to sync.</p>
 
+    {% if memory_error %}
+    <div class="banner-error">
+      {{ memory_error }}
+    </div>
+    {% endif %}
+
     {% if saved %}
     <div class="banner-success">
       Settings saved. Changes take effect within 1 hour automatically — or restart the
@@ -333,7 +350,7 @@
           · {{ container_runtime.get('error') }}
           {% endif %}
         </p>
-        <p class="hint">Use values like 8g, 4096m, or 0 for unlimited. The live container applies changes on its next heartbeat.</p>
+        <p class="hint">Use values like 8g, 4096m, or 0 for unlimited (unit required). The live container applies changes on its next heartbeat; a container recreate from the compose file resets the limit to the compose value.</p>
       </div>
 
       {% for lib in libraries %}

@@ -469,15 +469,16 @@ def _parse_schedule(form, lid: str) -> dict:
     }
 
 
-def _normalize_memory_limit(value: str) -> str:
+def _normalize_memory_limit(value: str) -> str | None:
+    """Return a canonical limit (unit required, or '0' for unlimited), or
+    None when the input is invalid — never silently coerce to the default,
+    which would queue an unintended limit change."""
     raw = (value or "").strip().lower()
     if raw == "0":
         return "0"
-    match = re.match(r"^([1-9][0-9]*)([kmgb]?)$", raw)
-    if not match:
-        return DEFAULT_CONTAINER_MEMORY_LIMIT
-    amount, unit = match.groups()
-    return amount + (unit or "b")
+    if not re.match(r"^[1-9][0-9]*[kmgb]$", raw):
+        return None
+    return raw
 
 
 def _queue_command(uuid: str, verb: str, args: dict | None = None) -> str:
@@ -613,16 +614,27 @@ def index():
     settings = load_settings()
     saved = False
     memory_command_id = None
+    memory_error = None
 
     if request.method == "POST":
         container_settings = settings.setdefault(CONTAINER_SETTINGS_KEY, {})
-        previous_memory_limit = _normalize_memory_limit(
-            container_settings.get("memory_limit", DEFAULT_CONTAINER_MEMORY_LIMIT)
+        previous_stored = container_settings.get(
+            "memory_limit", DEFAULT_CONTAINER_MEMORY_LIMIT
         )
+        previous_memory_limit = _normalize_memory_limit(previous_stored)
+        if previous_memory_limit is None:
+            previous_memory_limit = DEFAULT_CONTAINER_MEMORY_LIMIT
         memory_limit = _normalize_memory_limit(
-            request.form.get("container_memory_limit", DEFAULT_CONTAINER_MEMORY_LIMIT)
+            request.form.get("container_memory_limit", previous_stored)
         )
-        container_settings["memory_limit"] = memory_limit
+        if memory_limit is None:
+            memory_limit = previous_memory_limit
+            memory_error = (
+                "Invalid memory limit — use a value like 8g, 4096m, or 0 for "
+                "unlimited. The previous limit was kept."
+            )
+        else:
+            container_settings["memory_limit"] = memory_limit
 
         for lib in LIBRARIES:
             lid = lib["id"]
@@ -647,7 +659,7 @@ def index():
             settings[lid]["schedule"] = _parse_schedule(request.form, lid)
 
         save_settings(settings)
-        if memory_limit != previous_memory_limit:
+        if not memory_error and memory_limit != previous_memory_limit:
             memory_command_id = _queue_command(
                 LIBRARIES[0]["uuid"],
                 "set_memory_limit",
@@ -667,6 +679,7 @@ def index():
         container_settings=settings.get(CONTAINER_SETTINGS_KEY, {}),
         container_runtime=_latest_container_runtime(),
         memory_command_id=memory_command_id,
+        memory_error=memory_error,
         saved=saved,
         active_tab="settings",
     )
