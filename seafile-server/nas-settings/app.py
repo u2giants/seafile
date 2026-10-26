@@ -35,6 +35,7 @@ results.json).
 import datetime
 import json
 import os
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -86,6 +87,8 @@ SETTINGS_PATH = Path("/data/settings.json")
 STATUS_PATH = Path("/data/status.json")
 COMMANDS_PATH = Path("/data/commands.json")
 DEFAULT_INGEST_DAYS = 730
+DEFAULT_CONTAINER_MEMORY_LIMIT = "8g"
+CONTAINER_SETTINGS_KEY = "_container"
 DEFAULT_SCHEDULE = {
     "enabled": False,
     "timezone": "America/New_York",
@@ -157,6 +160,7 @@ READ_VERBS = {"list", "list_remote", "config_get"}        # read-only queries
 SAFE_VERBS = {"pause", "resume", "restart", "stop", "config_set"}  # reversible
 SAFE_VERBS |= {"refresh_folder_sizes"}
 SAFE_VERBS |= {"verify_now", "write_canary"}
+SAFE_VERBS |= {"set_memory_limit"}
 GUARDED_VERBS = {"desync", "create", "reinit"}            # require typed confirm
 ALL_VERBS = READ_VERBS | SAFE_VERBS | GUARDED_VERBS
 
@@ -225,10 +229,14 @@ def load_settings() -> dict:
                     data[lid]["schedule"] = normalize_schedule(
                         data[lid].get("schedule")
                     )
+                data.setdefault(CONTAINER_SETTINGS_KEY, {})
+                data[CONTAINER_SETTINGS_KEY].setdefault(
+                    "memory_limit", DEFAULT_CONTAINER_MEMORY_LIMIT
+                )
                 return data
         except (json.JSONDecodeError, OSError):
             pass
-    return {
+    data = {
         lib["id"]: {
             "ingest_days": DEFAULT_INGEST_DAYS,
             "uuid": lib["uuid"],
@@ -236,6 +244,10 @@ def load_settings() -> dict:
         }
         for lib in LIBRARIES
     }
+    data[CONTAINER_SETTINGS_KEY] = {
+        "memory_limit": DEFAULT_CONTAINER_MEMORY_LIMIT,
+    }
+    return data
 
 
 def save_settings(data: dict) -> None:
@@ -457,6 +469,43 @@ def _parse_schedule(form, lid: str) -> dict:
     }
 
 
+def _normalize_memory_limit(value: str) -> str | None:
+    """Return a canonical limit (unit required, or '0' for unlimited), or
+    None when the input is invalid — never silently coerce to the default,
+    which would queue an unintended limit change."""
+    raw = (value or "").strip().lower()
+    if raw == "0":
+        return "0"
+    if not re.match(r"^[1-9][0-9]*[kmgb]$", raw):
+        return None
+    return raw
+
+
+def _queue_command(uuid: str, verb: str, args: dict | None = None) -> str:
+    cmd = {
+        "id": uuid4().hex[:12],
+        "verb": verb,
+        "args": args or {},
+        "queued_at": datetime.datetime.utcnow().isoformat() + "Z",
+    }
+    commands = load_commands()
+    commands.setdefault(uuid, []).append(cmd)
+    save_commands(commands)
+    return cmd["id"]
+
+
+def _latest_container_runtime() -> dict:
+    newest_runtime = {}
+    newest_reported_at = ""
+    for entry in load_status().values():
+        runtime = entry.get("container_runtime")
+        reported_at = entry.get("reported_at", "")
+        if isinstance(runtime, dict) and reported_at >= newest_reported_at:
+            newest_runtime = runtime
+            newest_reported_at = reported_at
+    return newest_runtime
+
+
 def load_status() -> dict:
     if STATUS_PATH.exists():
         try:
@@ -564,8 +613,29 @@ def index():
 
     settings = load_settings()
     saved = False
+    memory_command_id = None
+    memory_error = None
 
     if request.method == "POST":
+        container_settings = settings.setdefault(CONTAINER_SETTINGS_KEY, {})
+        previous_stored = container_settings.get(
+            "memory_limit", DEFAULT_CONTAINER_MEMORY_LIMIT
+        )
+        previous_memory_limit = _normalize_memory_limit(previous_stored)
+        if previous_memory_limit is None:
+            previous_memory_limit = DEFAULT_CONTAINER_MEMORY_LIMIT
+        memory_limit = _normalize_memory_limit(
+            request.form.get("container_memory_limit", previous_stored)
+        )
+        if memory_limit is None:
+            memory_limit = previous_memory_limit
+            memory_error = (
+                "Invalid memory limit — use a value like 8g, 4096m, or 0 for "
+                "unlimited. The previous limit was kept."
+            )
+        else:
+            container_settings["memory_limit"] = memory_limit
+
         for lib in LIBRARIES:
             lid = lib["id"]
             preset = request.form.get(f"preset_{lid}", "730")
@@ -589,6 +659,12 @@ def index():
             settings[lid]["schedule"] = _parse_schedule(request.form, lid)
 
         save_settings(settings)
+        if not memory_error and memory_limit != previous_memory_limit:
+            memory_command_id = _queue_command(
+                LIBRARIES[0]["uuid"],
+                "set_memory_limit",
+                {"memory_limit": memory_limit},
+            )
         saved = True
 
     return render_template(
@@ -600,6 +676,10 @@ def index():
         days=DAYS,
         default_schedule=DEFAULT_SCHEDULE,
         schedule_windows=SCHEDULE_WINDOWS,
+        container_settings=settings.get(CONTAINER_SETTINGS_KEY, {}),
+        container_runtime=_latest_container_runtime(),
+        memory_command_id=memory_command_id,
+        memory_error=memory_error,
         saved=saved,
         active_tab="settings",
     )
@@ -777,16 +857,8 @@ def api_command():
     if verb in GUARDED_VERBS and not data.get("confirm"):
         return jsonify({"error": "confirmation required"}), 400
 
-    cmd = {
-        "id": uuid4().hex[:12],
-        "verb": verb,
-        "args": args,
-        "queued_at": datetime.datetime.utcnow().isoformat() + "Z",
-    }
-    commands = load_commands()
-    commands.setdefault(uuid, []).append(cmd)
-    save_commands(commands)
-    return jsonify({"ok": True, "id": cmd["id"]})
+    cmd_id = _queue_command(uuid, verb, args)
+    return jsonify({"ok": True, "id": cmd_id})
 
 
 @app.route("/api/settings")

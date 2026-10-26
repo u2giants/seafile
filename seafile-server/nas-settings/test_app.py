@@ -66,6 +66,9 @@ r = client.post("/api/command", json={"library_uuid": CHAR, "verb": "verify_now"
 check("verify_now command accepted", r.status_code == 200 and r.get_json().get("ok"))
 r = client.post("/api/command", json={"library_uuid": CHAR, "verb": "write_canary"})
 check("write_canary command accepted", r.status_code == 200 and r.get_json().get("ok"))
+r = client.post("/api/command", json={"library_uuid": CHAR, "verb": "set_memory_limit",
+                                       "args": {"memory_limit": "8g"}})
+check("set_memory_limit command accepted", r.status_code == 200 and r.get_json().get("ok"))
 
 print("== status POST: uuid routing, command handback, result persist ==")
 r = client.post("/api/status", json={"library_uuid": CHAR, "container_id": "abc123",
@@ -109,6 +112,7 @@ client.post("/", data={
     "schedule_timezone_seaf-cli-char-licensed": "America/New_York",
     "preset_seaf-cli-generic-decor": "730",
     "schedule_timezone_seaf-cli-generic-decor": "America/New_York",
+    "container_memory_limit": "6g",
 }, base_url=BASE)
 r = client.get("/api/settings")
 check("/api/settings returns lib uuid",
@@ -129,6 +133,36 @@ legacy = nas.normalize_schedule({
 check("legacy schedule normalizes to windows",
       legacy["windows"]["weekdays"]["start"] == "20:00"
       and legacy["windows"]["weekends"]["enabled"] is False)
+settings = nas.load_settings()
+check("container memory setting persisted",
+      settings[nas.CONTAINER_SETTINGS_KEY]["memory_limit"] == "6g")
+queued = nas.load_commands().get(CHAR, [])
+check("memory limit change queued",
+      any(cmd.get("verb") == "set_memory_limit"
+          and cmd.get("args", {}).get("memory_limit") == "6g"
+          for cmd in queued))
+
+print("== settings POST: invalid memory limit is rejected, not coerced ==")
+r = client.post("/", data={
+    "preset_seaf-cli-char-licensed": "730",
+    "schedule_timezone_seaf-cli-char-licensed": "America/New_York",
+    "preset_seaf-cli-generic-decor": "730",
+    "schedule_timezone_seaf-cli-generic-decor": "America/New_York",
+    "container_memory_limit": "16 g",
+}, base_url=BASE)
+check("invalid memory limit shows error",
+      r.status_code == 200 and "Invalid memory limit" in r.get_data(as_text=True))
+settings = nas.load_settings()
+check("invalid memory limit keeps previous value",
+      settings[nas.CONTAINER_SETTINGS_KEY]["memory_limit"] == "6g")
+queued_after = nas.load_commands().get(CHAR, [])
+check("invalid memory limit queues nothing",
+      len(queued_after) == len(queued))
+check("bare number without unit is invalid",
+      nas._normalize_memory_limit("8192") is None
+      and nas._normalize_memory_limit("8g") == "8g"
+      and nas._normalize_memory_limit("0") == "0"
+      and nas._normalize_memory_limit("") is None)
 
 print(f"\n{sum(PASS)}/{len(PASS)} checks passed")
 sys.exit(0 if all(PASS) else 1)

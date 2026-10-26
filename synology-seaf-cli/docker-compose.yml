@@ -42,12 +42,13 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2g
+          memory: 8g
     # Secrets (SEAF_USERNAME / SEAF_PASSWORD / SEAF_STATUS_TOKEN) load from this
     # file in the stack dir. Compose errors if it is missing — fail loud, not broken.
     env_file:
       - .env
     volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:rw
       - /volume1/mac/Decor/Character Licensed:/library/char:rw
       - /volume1/mac/Decor/Generic Decor:/library/decor:rw
       - /volume1/styleguides:/library/guides:rw

@@ -71,6 +71,17 @@
       line-height: 1.5;
     }
 
+    .banner-error {
+      background: #fef2f2;
+      border: 1px solid #fca5a5;
+      border-radius: 8px;
+      color: #b91c1c;
+      font-size: 0.9rem;
+      padding: 14px 18px;
+      margin-bottom: 24px;
+      line-height: 1.5;
+    }
+
     /* Library card */
     .card {
       background: #fff;
@@ -205,6 +216,23 @@
       margin-top: 14px;
     }
 
+    .runtime-line {
+      color: #4b5563;
+      font-size: 0.86rem;
+      line-height: 1.45;
+      margin-top: 10px;
+    }
+
+    .runtime-line code {
+      background: #f3f4f6;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      color: #111827;
+      font-family: "SF Mono", "Fira Code", "Courier New", monospace;
+      font-size: 0.8rem;
+      padding: 1px 5px;
+    }
+
     /* Page nav tabs */
     .page-nav {
       display: flex;
@@ -278,14 +306,53 @@
     <h1 class="page-heading">Ingest Window & Schedule</h1>
     <p class="page-sub">Control which NAS files are eligible, and when each library is allowed to sync.</p>
 
+    {% if memory_error %}
+    <div class="banner-error">
+      {{ memory_error }}
+    </div>
+    {% endif %}
+
     {% if saved %}
     <div class="banner-success">
       Settings saved. Changes take effect within 1 hour automatically — or restart the
       container for immediate effect (see <b>Libraries → Restarting or updating the NAS containers</b>).
+      {% if memory_command_id %}
+      Runtime memory update queued: <code>{{ memory_command_id }}</code>.
+      {% endif %}
     </div>
     {% endif %}
 
     <form method="post" action="{{ url_for('index') }}">
+      <div class="card">
+        <div class="card-header">
+          <h2>Container Runtime</h2>
+          <span class="uuid">seaf-cli</span>
+        </div>
+
+        <div class="field-row">
+          <div class="field-group">
+            <label for="container_memory_limit">Memory Limit</label>
+            <input type="text"
+                   id="container_memory_limit"
+                   name="container_memory_limit"
+                   value="{{ container_settings.get('memory_limit', '8g') }}"
+                   placeholder="8g" />
+          </div>
+        </div>
+
+        <p class="runtime-line">
+          Current:
+          <code>{{ container_runtime.get('memory_limit_human') or 'waiting for heartbeat' }}</code>
+          {% if container_runtime.get('docker_socket') is sameas false %}
+          · runtime updates require the next container recreate
+          {% endif %}
+          {% if container_runtime.get('error') %}
+          · {{ container_runtime.get('error') }}
+          {% endif %}
+        </p>
+        <p class="hint">Use values like 8g, 4096m, or 0 for unlimited (unit required). The live container applies changes on its next heartbeat; a container recreate from the compose file resets the limit to the compose value.</p>
+      </div>
+
       {% for lib in libraries %}
       {% set lid = lib.id %}
       {% set current_days = settings.get(lid, {}).get('ingest_days', 730) %}

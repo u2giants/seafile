@@ -5,12 +5,15 @@ from pathlib import Path
 from typing import Any
 import argparse
 import datetime
+import http.client
 import json
 import logging
 import os
+import re
 import signal
 import shutil
 import sqlite3
+import socket
 import subprocess
 import sys
 import threading
@@ -49,6 +52,15 @@ KNOWN_CONFIG_KEYS = [
     "disable_verify_certificate",
     "sync_extra_temp_file",
 ]
+DOCKER_SOCKET = Path("/var/run/docker.sock")
+MEMORY_LIMIT_RE = re.compile(r"^(0|[1-9][0-9]*)([bBkKmMgG]?)$")
+MEMORY_UNITS = {
+    "": 1,
+    "b": 1,
+    "k": 1024,
+    "m": 1024 ** 2,
+    "g": 1024 ** 3,
+}
 
 
 class BadConfiguration(Exception):
@@ -546,7 +558,100 @@ class Client:
             "last_ingest_at": ingest.get("last_ingest_at"),
             "ingest_days": ingest.get("ingest_days"),
             "folder_size_cache": self._load_folder_size_cache(),
+            "container_runtime": self._container_runtime_status(),
         }
+
+    def _normalize_memory_limit(self, value: Any) -> tuple[str, int]:
+        raw = str(value or "").strip()
+        match = MEMORY_LIMIT_RE.match(raw)
+        if not match:
+            raise ValueError("memory limit must look like 8g, 4096m, or 0")
+        amount = int(match.group(1))
+        unit = match.group(2).lower()
+        if amount == 0:
+            return "0", 0
+        if not unit:
+            return str(amount), amount
+        return f"{amount}{unit}", amount * MEMORY_UNITS[unit]
+
+    def _format_bytes(self, value: int) -> str:
+        if value <= 0:
+            return "unlimited"
+        for suffix, factor in (("g", 1024 ** 3), ("m", 1024 ** 2), ("k", 1024)):
+            if value % factor == 0:
+                return f"{value // factor}{suffix}"
+        return f"{value}b"
+
+    def _container_name(self) -> str:
+        return os.environ.get("SEAF_CONTAINER_NAME") or os.environ.get("HOSTNAME", "")
+
+    def _docker_request(self, method: str, path: str, body: dict | None = None) -> tuple[int, str]:
+        if not DOCKER_SOCKET.exists():
+            raise RuntimeError("/var/run/docker.sock is not mounted")
+
+        class UnixHTTPConnection(http.client.HTTPConnection):
+            def connect(self_inner):
+                self_inner.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                self_inner.sock.settimeout(self_inner.timeout)
+                self_inner.sock.connect(str(DOCKER_SOCKET))
+
+        payload = json.dumps(body).encode() if body is not None else None
+        headers = {"Content-Type": "application/json"} if body is not None else {}
+        conn = UnixHTTPConnection("localhost", timeout=10)
+        try:
+            conn.request(method, path, body=payload, headers=headers)
+            resp = conn.getresponse()
+            text = resp.read().decode(errors="replace")
+            return resp.status, text
+        except socket.timeout as exc:
+            # The reporter loop is single-threaded: a wedged dockerd must
+            # raise here, not block heartbeats and command delivery forever.
+            raise RuntimeError("docker socket request timed out") from exc
+        finally:
+            conn.close()
+
+    def _container_runtime_status(self) -> dict:
+        name = self._container_name()
+        status = {
+            "container": name,
+            "docker_socket": DOCKER_SOCKET.exists(),
+            "memory_limit": None,
+            "memory_limit_human": None,
+            "memory_swap": None,
+        }
+        if not name or not DOCKER_SOCKET.exists():
+            return status
+        try:
+            code, text = self._docker_request("GET", f"/containers/{name}/json")
+            if code >= 400:
+                status["error"] = text or f"Docker API returned {code}"
+                return status
+            data = json.loads(text)
+            host_config = data.get("HostConfig") or {}
+            memory = int(host_config.get("Memory") or 0)
+            status["memory_limit"] = memory
+            status["memory_limit_human"] = self._format_bytes(memory)
+            status["memory_swap"] = host_config.get("MemorySwap")
+        except Exception as exc:
+            status["error"] = str(exc)
+        return status
+
+    def _set_container_memory_limit(self, value: Any) -> str:
+        normalized, memory = self._normalize_memory_limit(value)
+        name = self._container_name()
+        if not name:
+            raise RuntimeError("container name unavailable")
+        # Docker rejects Memory > MemorySwap, and the compose file sets no
+        # memswap limit (Docker's default is 2x memory), so every update
+        # pins swap to that same 2x convention; 0 means unlimited for both.
+        body = {
+            "Memory": memory,
+            "MemorySwap": memory * 2 if memory > 0 else 0,
+        }
+        code, text = self._docker_request("POST", f"/containers/{name}/update", body)
+        if code >= 400:
+            raise RuntimeError(text or f"Docker API returned {code}")
+        return f"container memory limit set to {normalized}"
 
     def _run_seaf(self, args: list[str], timeout: int = 120) -> tuple[bool, str]:
         """Run a seaf-cli subcommand; return (ok, combined output) with any
@@ -1192,6 +1297,10 @@ class Client:
             elif verb == "refresh_folder_sizes":
                 self._refresh_folder_size_cache_async(force=True)
                 result.update(ok=True, output="folder-size refresh started")
+
+            elif verb == "set_memory_limit":
+                output = self._set_container_memory_limit(args.get("memory_limit", ""))
+                result.update(ok=True, output=output)
 
             elif verb in ("verify_now", "write_canary"):
                 repos = self._repos_for_library(command.get("library_uuid"))

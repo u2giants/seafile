@@ -361,6 +361,20 @@ Seafile does not expose a plugin slot for these UI changes.
 Do not change because:
 Editing installed Seahub files would be untracked; removing the overrides removes the only visible panel entry points.
 
+### seaf-cli container mounts the Docker socket (recorded host-root grant)
+
+Looks like:
+Mounting `/var/run/docker.sock` into a container is a misconfiguration.
+
+Actually:
+It is a deliberate, recorded grant so the NAS agent can apply panel-queued memory-limit updates (`GET /containers/{id}/json`, `POST /containers/{id}/update`) without SSH. Reviewed by the assigned reviewer (2026-10-26) with this entry as the recorded decision.
+
+Why:
+The panel cannot push to the NAS; the agent polls. Without the socket, the memory field is compose-only and requires an SSH recreate to change. The container is single-purpose on a private NAS and already runs as root with the live library bind mounts.
+
+Do not change because:
+Removing the mount silently degrades the feature to recreate-only; the panel then shows a stale "waiting for heartbeat" limit. If the grant is ever tightened, use a route-allowlisting proxy for exactly those two endpoints — not a generic socket proxy (POST passthrough still reaches container create/exec), and re-record the decision here. Blast radius while mounted: compromise of this container or its base image is root on `edgesynology1`.
+
 ### Folder sizes are cached, not calculated live
 
 Looks like:
@@ -454,6 +468,7 @@ Never commit actual secret values.
 | `SEAF_LIBRARY_PASSWORD` | Optional encrypted-library password | environment only if used | no | optional |
 | `SEAF_SETTINGS_URL` | Panel settings endpoint for NAS agent | NAS compose | no | yes |
 | `SEAF_STATUS_TOKEN` | NAS agent status token | NAS env | no | yes |
+| `SEAF_CONTAINER_NAME` | Container identifier for the panel memory-limit update API | environment only if used; defaults to hostname | no | optional |
 | `SEAF_UPLOAD_LIMIT` | Optional seaf-cli upload speed cap | environment only if used | no | optional |
 | `SEAF_DOWNLOAD_LIMIT` | Optional seaf-cli download speed cap | environment only if used | no | optional |
 | `SEAF_SKIP_SSL_CERT` | Optional TLS verification skip | environment only if used | no | optional |

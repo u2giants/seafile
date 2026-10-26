@@ -114,6 +114,10 @@ check("list_remote includes creds",
 c._refresh_folder_size_cache_async = lambda force=False: calls.append(["refresh_folder_sizes", force])
 check("refresh_folder_sizes starts scanner",
       disp("refresh_folder_sizes")["ok"] and calls == [["refresh_folder_sizes", True]])
+c._set_container_memory_limit = lambda value: calls.append(["set_memory_limit", value]) or f"set {value}"
+check("set_memory_limit updates container runtime",
+      disp("set_memory_limit", {"memory_limit": "8g"})["ok"]
+      and calls == [["set_memory_limit", "8g"]])
 c._verify_library = lambda name, repo, state, daemon_health=None: {"status": "healthy", "reason": "checked"}
 c._daemon_health = lambda pid=None: {"status": "healthy", "issues": []}
 c._daemon_pid = lambda: 123
@@ -160,6 +164,9 @@ check("status report is keyed to requested library uuid",
 
 check("daemon health flags low inotify limit",
       "below minimum" in ep.Client._daemon_health(c, None)["issues"][0])
+check("memory limit normalizes units",
+      ep.Client._normalize_memory_limit(c, "8g") == ("8g", 8 * 1024 ** 3)
+      and ep.Client._normalize_memory_limit(c, "4096m") == ("4096m", 4096 * 1024 ** 2))
 
 spec = importlib.util.spec_from_file_location(
     "seaf_entrypoint", Path(__file__).with_name("seaf-entrypoint.py")
@@ -178,6 +185,17 @@ check("@eaDir is ignored by default",
       Path("visible.txt") in wanted and Path("@eaDir/thumb.jpg") not in wanted)
 check("SEAF_IGNORE_DIRS can override ignored dirs",
       Path("@eaDir/thumb.jpg") in seaf_entrypoint.scan_source(None, ignored_dirs=set()))
+staged = Path(tempfile.mkdtemp())
+(staged / "nested").mkdir()
+(staged / "nested" / "old.bin").write_bytes(b"old")
+(staged / "root.bin").write_bytes(b"root")
+seaf_entrypoint.LIBRARY = staged
+cleanup_result = seaf_entrypoint.cleanup_staging("test")
+check("staging cleanup removes files and dirs",
+      cleanup_result["files"] == 2
+      and cleanup_result["dirs"] == 1
+      and cleanup_result["errors"] == 0
+      and list(staged.iterdir()) == [])
 
 scanner = ep.Client.__new__(ep.Client)
 scanner.source = Path(tempfile.mkdtemp())
