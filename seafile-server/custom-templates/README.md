@@ -18,6 +18,12 @@ A verbatim copy of Seafile's built-in `react_app.html` (the main workspace app) 
 
 Same full-copy rationale and upgrade risk as above — re-diff against `/opt/seafile/seafile-pro-server-<version>/seahub/seahub/templates/react_app.html` after a Seafile upgrade. (Current upstream baseline: 13.0.21.)
 
+### `sysadmin/sudo_mode.html`
+
+A copy of Seafile's built-in admin sudo-mode template adjusted for the POP Creations Microsoft SSO deployment. The stock template asks admins to confirm a local password and its SSO button targets Shibboleth/ADFS. This override makes "Sign in with Microsoft" the primary action and sends admins through Seafile's existing `{% url 'sso' %}` route, preserving the `next` admin URL. Seafile already refreshes sudo-mode after a staff OAuth login, so no Python patch is required.
+
+The local password form remains available behind a disclosure for emergency/local admin accounts.
+
 ### `registration/login.html`
 
 A verbatim copy of Seafile's built-in login template with one visual change: the SSO button renders as a Microsoft-branded "Sign in with Microsoft" button. The existing `#sso` click handler and Seahub SSO/OAuth route are unchanged.
@@ -32,6 +38,8 @@ while IFS= read -r -d "" l; do export "$l"; done < /proc/$PID/environ
 python3 -c "import django; django.setup(); from django.template.loader import get_template; get_template(\"react_app.html\"); print(\"OK\")"'
 ```
 
+Replace `react_app.html` with the template you changed when validating a specific override.
+
 ## Deployment
 
 Files in this directory must be manually copied to the VPS, then Seahub restarted (templates are cached, so changes do not take effect until then):
@@ -39,6 +47,7 @@ Files in this directory must be manually copied to the VPS, then Seahub restarte
 ```bash
 DST=/opt/seafile-data/seafile/seahub-data/custom/templates
 sudo cp seafile-server/custom-templates/sysadmin/sysadmin_react_app.html "$DST/sysadmin/sysadmin_react_app.html"
+sudo cp seafile-server/custom-templates/sysadmin/sudo_mode.html          "$DST/sysadmin/sudo_mode.html"
 sudo cp seafile-server/custom-templates/react_app.html                   "$DST/react_app.html"
 sudo mkdir -p "$DST/registration"
 sudo cp seafile-server/custom-templates/registration/login.html          "$DST/registration/login.html"
