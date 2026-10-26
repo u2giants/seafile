@@ -580,14 +580,16 @@ Backed up `ccnet_db`/`seahub_db`, deactivated the duplicate no-profile account, 
 Rule added to prevent recurrence:
 Before any planned `seafile` container restart, verify the `ccnet_db.EmailUser` count is at most 10. The license ceiling stands until upgraded: an 11th self-registered user will take the server down on its next restart.
 
-Recurrence (same day, ~2:17 PM EST): Joao Melhorance self-registered a SECOND SSO account (`8ed31406…@auth.local`, provider `designflow.app`, no contact email — duplicate of `089e556d…@auth.local` / jmelho@popcre.com). The count hit 11 and the backend's internal re-init failed user-manager setup, killing the RPC pipe while gunicorn kept serving — logged-in users saw Seahub's "server hiccup" 500 page instead of a 502. Same recovery: DB backup (`/home/ai/seafile-db-backup-20261026-incident2.sql`), deactivate the duplicate, restart, verified all-API-200. Second occurrence the same day: the license upgrade (or disabling SSO auto-registration) is the only durable fix; every additional staff SSO login risks another outage.
+Recurrence (same day, ~2:17 PM EST): a SECOND account for Joao Melhorance (`8ed31406…@auth.local`) appeared and pushed the count to 11; the backend's internal re-init failed user-manager setup, killing the RPC pipe while gunicorn kept serving — logged-in users saw Seahub's "server hiccup" 500 page instead of a 502. Same recovery: DB backup (`/home/ai/seafile-db-backup-20261026-incident2.sql`), deactivate the duplicate, restart, verified all-API-200.
+
+Root cause (fixed ~4:15 PM EST): Joao's profile (`089e556d…@auth.local`, jmelho@popcre.com) had been pre-created ~12:24 PM EST without an SSO link. Seahub's OAuth login matches by `(provider, uid)` link, then by a login-identifier lookup of the Microsoft email claim — it never checks `profile.contact_email`, so his sign-in found nothing and auto-created a new account. Fix applied, no license change (owner ruling: fix the problem): moved his `designflow.app` binding to his real profile, deleted the empty duplicate via admin API (exactly 10 users again), and set `REMOTE_USER_CREATE_UNKNOWN_USER = False` in live `seahub_settings.py` (backup: `seahub_settings.py.bak-20261026-dupfix`) so an unknown identity now gets "registration is not allowed" instead of silently creating user 11. Onboarding procedure from now on: pre-create in the admin UI, then add the `social_auth_usersocialauth` link for the user's Microsoft identity before their first sign-in.
 
 ## Pending work
 
 | Status | Item | Owner/next action |
 |---|---|---|
 | open | Decide read-write sharing policy for all users | In GUI, create/use an all-users group and share both NAS libraries read-write; internal public shares are currently read-only |
-| open | Onboard POP Creations staff | Users sign in with Microsoft SSO; add them to the read-write group/share policy |
+| open | Onboard POP Creations staff | Pre-create user in admin UI, add their Microsoft `social_auth_usersocialauth` link before first sign-in (auto-creation is off; see 2026-10-26 incident), then add them to the read-write group/share policy |
 | optional | Move NAS compose/env staging out of `/tmp` | Use a persistent NAS path such as `/volume1/docker/seaf-cli/` if an operator wants easier recreates |
 | optional | Pin `flrnnc/seafile-client` base image by digest | Improves reproducibility but requires a documented bump procedure |
 | optional | Elasticsearch/full-text search | Requires RAM planning; current connection errors are expected because Elasticsearch is not deployed |
