@@ -18,6 +18,13 @@ Always start with:
 
 - `AGENTS.md`
 
+Shared standards to keep in sync:
+
+- [`albert-standards/infrastructure/seafile.md`](https://github.com/u2giants/albert-standards/blob/main/infrastructure/seafile.md) records the cross-project Seafile infrastructure facts.
+- [`albert-standards/synology/runbooks/seafile-sync-inotify.md`](https://github.com/u2giants/albert-standards/blob/main/synology/runbooks/seafile-sync-inotify.md) records NAS inotify and Seafile sync operating guidance.
+
+When changing infrastructure, deployment, DNS, authentication, storage, backup, NAS sync topology, Synology host limits, or other operating-environment decisions, update the applicable `albert-standards` file in the same session.
+
 Then load additional docs only when relevant:
 
 | Task / question | Read these docs | Usually do not need |

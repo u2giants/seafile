@@ -53,3 +53,5 @@ docs/
 ## AI Sessions
 
 Start with **`AGENTS.md`** in this repo root. All context is there.
+
+Shared infrastructure/NAS standards that apply beyond this repo live in [`u2giants/albert-standards`](https://github.com/u2giants/albert-standards): read [`infrastructure/seafile.md`](https://github.com/u2giants/albert-standards/blob/main/infrastructure/seafile.md) and [`synology/runbooks/seafile-sync-inotify.md`](https://github.com/u2giants/albert-standards/blob/main/synology/runbooks/seafile-sync-inotify.md) for infrastructure, server, NAS, or operating-environment changes. Update those standards in the same session when decisions here change the shared environment.
