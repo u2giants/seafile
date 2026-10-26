@@ -103,6 +103,7 @@ Everything else requires justification before touching. Do not edit Seafile's in
 | `seafile-server/custom-templates/sysadmin/sysadmin_react_app.html` | Full Seahub template copy with injected admin sidebar link to `/nas-settings/` | Seafile has no plugin hook for adding a custom System Admin page link | Re-diff against the upstream template after Seafile upgrades; a stale copy can break the sysadmin UI |
 | `seafile-server/custom-templates/react_app.html` | Full Seahub main app template copy with admin-only NAS Sync sidebar link | Lets admins reach the panel from the main Seafile UI; non-admins do not see a dead admin link | Re-diff after Seafile upgrades; a template syntax error can break the main app page |
 | `seafile-server/custom-templates/registration/login.html` | Seahub login template copy with the official Microsoft sign-in button/logo wired to Seafile's SSO click handler | Replaces generic "Single Sign-On" UI with the correct Microsoft SSO affordance | Re-diff after Seafile login template changes; broken markup can affect login |
+| `seafile-server/custom-templates/sysadmin/sudo_mode.html` | Seahub admin sudo-mode template copy with the official Microsoft sign-in button wired to Seafile's SSO route | Lets SSO-only admins confirm admin access without a local password; local password remains available as fallback | Re-diff after Seafile upgrades; broken markup can affect admin entry |
 
 No upstream source files are modified in-repo; these are runtime template overrides layered through Seafile's custom-template directory.
 
@@ -111,7 +112,7 @@ No upstream source files are modified in-repo; these are runtime template overri
 | Task | Files to touch | Files not to touch |
 |---|---|---|
 | Change login screen | `seafile-server/custom-templates/registration/login.html`, `seafile-server/custom-templates/README.md` | Installed Seahub files inside the `seafile` container |
-| Change admin/main NAS Sync links | `seafile-server/custom-templates/sysadmin/sysadmin_react_app.html`, `seafile-server/custom-templates/react_app.html` | Unrelated Seahub templates |
+| Change admin/main NAS Sync links or admin confirmation UI | `seafile-server/custom-templates/sysadmin/sysadmin_react_app.html`, `seafile-server/custom-templates/sysadmin/sudo_mode.html`, `seafile-server/custom-templates/react_app.html` | Unrelated Seahub templates |
 | Change NAS Settings panel behavior | `seafile-server/nas-settings/app.py`, `seafile-server/nas-settings/templates/`, `seafile-server/nas-settings/test_app.py`, `seafile-server/nas-settings/README.md` | `seafile-server/seafile-server.yml` unless runtime wiring changes |
 | Add/change sync schedule UI | `seafile-server/nas-settings/app.py`, `seafile-server/nas-settings/templates/settings.html`, `synology-seaf-cli/entrypoint.py`, tests | Manual per-container edits on the NAS |
 | Add/change cached folder-size view | `synology-seaf-cli/entrypoint.py`, `seafile-server/nas-settings/templates/libraries.html`, tests, relevant READMEs | Live recursive folder-size calculation in Seahub file browsing |

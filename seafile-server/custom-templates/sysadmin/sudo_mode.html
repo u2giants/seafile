@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block sub_title %}{% trans "Confirm Admin Access" %} - {% endblock %}
+{% block header_css_class %}hide{% endblock %}
+{% block extra_base_style %}
+<link rel="stylesheet" type="text/css" href="{{ MEDIA_URL }}css/seafile-ui.css?t=20250802" />
+{% endblock %}
+
+{% block extra_style %}
+<style type="text/css">
+html, body, #wrapper { height:100%; }
+#wrapper {
+  background: url('{{ MEDIA_URL }}{{login_bg_image_path}}') center top no-repeat scroll;
+  background-size: cover;
+  padding-top: 1px;
+  position: relative;
+}
+#wrapper::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.1);
+  z-index: 1;
+}
+.login-panel-outer-container {
+  position: relative;
+  z-index: 10;
+}
+.ms-signin-button {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #8c8c8c;
+  border-radius: 2px;
+  color: #5e5e5e;
+  display: flex;
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  height: 41px;
+  justify-content: center;
+  line-height: 1;
+  margin-bottom: 16px;
+  padding: 0 12px;
+}
+.ms-signin-button:hover,
+.ms-signin-button:focus {
+  background: #f8f8f8;
+  border-color: #5e5e5e;
+  color: #5e5e5e;
+  text-decoration: none;
+}
+.ms-signin-logo {
+  flex: 0 0 auto;
+  height: 21px;
+  margin-right: 12px;
+  width: 21px;
+}
+.ms-signin-text {
+  display: inline-block;
+  min-width: 0;
+}
+.sudo-local-password {
+  border-top: 1px solid #e5e5e5;
+  margin-top: 18px;
+  padding-top: 18px;
+}
+.sudo-local-password-summary {
+  color: #666;
+  cursor: pointer;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+</style>
+{% endblock %}
+
+{% block main_content %}
+<div class="login-panel-outer-container vh">
+  <div class="login-panel" id="log-in-panel">
+    <h1 class="login-panel-hd">{% trans "Confirm admin access" %}</h1>
+    <p class="text-center">{% trans "You are entering the admin area. Confirm with Microsoft to continue." %}</p>
+
+    <button id="sso" type="button" class="btn btn-block ms-signin-button" aria-label="Sign in with Microsoft">
+      <svg class="ms-signin-logo" viewBox="0 0 23 23" role="img" aria-hidden="true" focusable="false">
+        <rect x="1" y="1" width="10" height="10" fill="#f25022"></rect>
+        <rect x="12" y="1" width="10" height="10" fill="#7fba00"></rect>
+        <rect x="1" y="12" width="10" height="10" fill="#00a4ef"></rect>
+        <rect x="12" y="12" width="10" height="10" fill="#ffb900"></rect>
+      </svg>
+      <span class="ms-signin-text">Sign in with Microsoft</span>
+    </button>
+
+    <details class="sudo-local-password">
+      <summary class="sudo-local-password-summary">{% trans "Use a local password instead" %}</summary>
+      <form action="" method="post" class="con">{% csrf_token %}
+        <div class="position-relative">
+          <input id="password-input" type="password" name="password" placeholder="{% trans "Password" %}" aria-label="{% trans "Password" %}" title="{% trans "Password" %}" value="" class="input" autocomplete="off" />
+          <i id="toggle-show-password" class="sf3-font sf3-font-eye-slash"></i>
+        </div>
+        {% if password_error %}
+        <p class="error mt-1">{% trans "Incorrect password" %}</p>
+        {% else %}
+        <p class="error mt-1 hide"></p>
+        {% endif %}
+
+        <button type="submit" class="submit btn btn-primary btn-block h-auto mb-3">{% trans "Confirm Password" %}</button>
+      </form>
+    </details>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_script %}
+<script type="text/javascript">
+$('.login-panel-outer-container').prepend($($('#logo').html()).attr({'height': 40}).addClass('login-panel-logo'));
+var $el = $('.login-panel-outer-container');
+var elHeight = $el.outerHeight();
+var wdHeight = $(window).height();
+if (wdHeight > elHeight) {
+  $el.css({'margin-top': (wdHeight - elHeight)/2});
+}
+$el.removeClass('vh');
+
+$('#sso').trigger('focus');
+
+$('#toggle-show-password').click(function() {
+  $(this).toggleClass('sf3-font-eye-slash sf3-font-eye');
+  if ($(this).hasClass('sf3-font-eye-slash')) {
+    $('#password-input').attr('type', 'password');
+  } else {
+    $('#password-input').attr('type', 'text');
+  }
+});
+
+$('[type="submit"]').on('click', function(){
+  if (!$('input[name="password"]').val().trim()) {
+    $('.error').removeClass('hide').html("{% trans "Password cannot be blank" %}");
+    return false;
+  }
+});
+
+$(function() {
+  $('#sso').on('click', function() {
+    let baseUrl = "{% url 'sso' %}{% if next %}?next={{ next|urlencode }}{% endif %}";
+    window.location = baseUrl;
+    return false;
+  });
+});
+</script>
+{% endblock %}
