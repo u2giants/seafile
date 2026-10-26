@@ -16,6 +16,7 @@ System Admin sidebar.
 | **Config** | `config -k [-v]` | Get/set any daemon config key (upload/download limits, TLS verify, …) plus a free-form key/value. |
 | **Libraries** | `list`, `list-remote`, `create`, `desync` | Local libraries + desync; list server libraries; create a server library; show cached NAS folder sizes. |
 | **Ingest Window** | — | Per-library ingest-day window plus weekday/weekend sync schedules. |
+| **Container Runtime** | — | Live `seaf-cli` memory limit: persisted under the `_container` settings key, queued as a `set_memory_limit` command on change or live drift, applied by the agent via the mounted Docker socket. A compose recreate resets the limit to the compose value. |
 
 ### Safety tiers
 - **Read / Safe** (status, list, config get/set, pause/resume/restart/stop, verify now, write canary) apply directly.

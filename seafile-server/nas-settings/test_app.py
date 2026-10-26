@@ -164,5 +164,50 @@ check("bare number without unit is invalid",
       and nas._normalize_memory_limit("0") == "0"
       and nas._normalize_memory_limit("") is None)
 
+print("== settings POST: live drift re-queues unchanged stored value ==")
+# After a compose recreate the live limit resets while settings.json keeps
+# the stored value; re-saving that same value must still queue the update.
+r = client.post("/api/status", json={
+    "library_uuid": CHAR, "container_id": "abc123",
+    "reported_at": "2026-10-26T19:00:00Z",
+    "container_runtime": {"docker_socket": True,
+                          "memory_limit": 8 * 1024 ** 3,
+                          "memory_limit_human": "8g",
+                          "memory_swap": 16 * 1024 ** 3},
+}, headers={"X-Status-Token": "test-token"})
+check("heartbeat with container_runtime accepted", r.status_code == 200)
+
+def _mem6g_commands():
+    return [cmd for cmd in nas.load_commands().get(CHAR, [])
+            if cmd.get("verb") == "set_memory_limit"
+            and cmd.get("args", {}).get("memory_limit") == "6g"]
+
+mem6g_before = len(_mem6g_commands())
+r = client.post("/", data={
+    "preset_seaf-cli-char-licensed": "730",
+    "schedule_timezone_seaf-cli-char-licensed": "America/New_York",
+    "preset_seaf-cli-generic-decor": "730",
+    "schedule_timezone_seaf-cli-generic-decor": "America/New_York",
+    "container_memory_limit": "6g",
+}, base_url=BASE)
+check("re-saved stored value with drifted live limit queues update",
+      "Runtime memory update queued" in r.get_data(as_text=True))
+check("drift re-queue appended set_memory_limit",
+      len(_mem6g_commands()) == mem6g_before + 1)
+
+print("== settings POST: below-floor limit is rejected ==")
+r = client.post("/", data={
+    "preset_seaf-cli-char-licensed": "730",
+    "schedule_timezone_seaf-cli-char-licensed": "America/New_York",
+    "preset_seaf-cli-generic-decor": "730",
+    "schedule_timezone_seaf-cli-generic-decor": "America/New_York",
+    "container_memory_limit": "8k",
+}, base_url=BASE)
+check("below-floor memory limit rejected with error",
+      "Invalid memory limit" in r.get_data(as_text=True))
+settings = nas.load_settings()
+check("below-floor limit keeps previous value",
+      settings[nas.CONTAINER_SETTINGS_KEY]["memory_limit"] == "6g")
+
 print(f"\n{sum(PASS)}/{len(PASS)} checks passed")
 sys.exit(0 if all(PASS) else 1)

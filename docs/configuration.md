@@ -97,8 +97,10 @@ NAS_STATUS_TOKEN=<random string>           # shared with seaf-cli containers for
 Used by the `nas-settings` container. `SEAFILE_INTERNAL_URL` and `SEAFILE_PUBLIC_HOST` are hardcoded in `nas-settings.yml` (not sourced from `.env`) because they are deployment-invariant for this installation.
 
 The panel persists per-library ingest/schedule settings in the `nas-settings-data`
-Docker volume at `/data/settings.json`. The schedule stored for each library has
-this normalized shape:
+Docker volume at `/data/settings.json`. A top-level `_container` key stores the
+panel-level container settings (currently `memory_limit` for the NAS `seaf-cli`
+container; applied via the queued `set_memory_limit` command). The schedule
+stored for each library has this normalized shape:
 
 ```json
 {
@@ -131,6 +133,7 @@ host env file used with it:
 | `SEAF_STATUS_TOKEN` | Shared token used when posting status to `/api/status`. |
 | `SEAF_UPLOAD_LIMIT` / `SEAF_DOWNLOAD_LIMIT` | Optional seaf-cli transfer limits in KB/s. |
 | `SEAF_MIN_INOTIFY_WATCHES` | Minimum acceptable Synology host inotify watch limit before the status dashboard reports an anomaly. Default: `1048576`. |
+| `SEAF_CONTAINER_NAME` | Container identifier used for the panel memory-limit Docker API calls. Default: the container's hostname. |
 | `SEAF_INOTIFY_WARN_USAGE` | Fraction of `max_user_watches` at which the wrapper reports high inotify usage. Default: `0.80`. |
 | `SEAF_CANARY_FILENAME` | Per-library production-tree canary filename. Default: `.seafile-sync-canary.json`. |
 | `SEAF_CANARY_INTERVAL_SECONDS` | Minimum time between automatic canary rewrites. Default: `600`. |

@@ -8,9 +8,14 @@ Landed and verified:
 - License incident (~1:35 PM EST): restart failed, "users exceeds limit, max 10, current 11" (two same-day SSO self-registrations). Duplicate no-profile account deactivated by session, then erased by Albert in the UI. Now exactly 10/10 active — the next added user blocks restarts until the license is upgraded. DB backup before the change: `/home/ai/seafile-db-backup-20261026.sql` (ai home, mode 600).
 
 Unfinished — NAS memory-limit feature (started by an earlier session):
-- Working tree holds: `settings.html`, `test_app.py`, `synology-seaf-cli/{README.md,docker-compose.yml,entrypoint.py,test_entrypoint.py}` (compose: 2g→8g, mounts `/var/run/docker.sock` — security-relevant, review before landing).
-- `stash@{0}` ("session stash before pull 2026-10-26") holds the full pre-pull snapshot including the `app.py` handler (+~86 lines) and docs bits dropped during pull-conflict resolution. The working tree alone is NOT coherent: its tests call `set_memory_limit`, whose app-side code exists only in the stash (this split caused 8/32 local test failures on 2026-10-26 — not a code bug).
-- To continue: port the memory-limit hunks from `stash@{0}` onto current `main`, reconcile the working-tree files, run both suites.
+RESOLVED 2026-10-26 (later session): the feature landed and merged as seafile#11 —
+stash `app.py` handler ported, six working-tree drafts reconciled, docker.sock
+grant recorded in AGENTS.md Intentional quirks, reviewer final-check APPROVE.
+The old `stash@{0}` snapshot and the incident note below are history only.
+- License incident RECURRED ~2:17 PM EST the same day (Joao duplicate SSO account
+  pushed users to 11; backend re-init failed, "server hiccup" 500s). Recovered the
+  same way: backup `/home/ai/seafile-db-backup-20261026-incident2.sql`, deactivate
+  duplicate, restart. Durable fix = license upgrade (owner decision).
 
 Environment:
 - GitHub auth on this VPS repaired (gh token restored from vps2). `ai-review` repaired: `/usr/local/bin/ai-review-pool` now symlinks to `/home/ai/ai-devops/bin/ai-review-pool` (was missing from the managed set).

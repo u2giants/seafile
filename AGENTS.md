@@ -580,6 +580,8 @@ Backed up `ccnet_db`/`seahub_db`, deactivated the duplicate no-profile account, 
 Rule added to prevent recurrence:
 Before any planned `seafile` container restart, verify the `ccnet_db.EmailUser` count is at most 10. The license ceiling stands until upgraded: an 11th self-registered user will take the server down on its next restart.
 
+Recurrence (same day, ~2:17 PM EST): Joao Melhorance self-registered a SECOND SSO account (`8ed31406…@auth.local`, provider `designflow.app`, no contact email — duplicate of `089e556d…@auth.local` / jmelho@popcre.com). The count hit 11 and the backend's internal re-init failed user-manager setup, killing the RPC pipe while gunicorn kept serving — logged-in users saw Seahub's "server hiccup" 500 page instead of a 502. Same recovery: DB backup (`/home/ai/seafile-db-backup-20261026-incident2.sql`), deactivate the duplicate, restart, verified all-API-200. Second occurrence the same day: the license upgrade (or disabling SSO auto-registration) is the only durable fix; every additional staff SSO login risks another outage.
+
 ## Pending work
 
 | Status | Item | Owner/next action |

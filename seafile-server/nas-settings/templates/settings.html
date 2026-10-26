@@ -312,7 +312,7 @@
     </div>
     {% endif %}
 
-    {% if saved %}
+    {% if saved and not memory_error %}
     <div class="banner-success">
       Settings saved. Changes take effect within 1 hour automatically — or restart the
       container for immediate effect (see <b>Libraries → Restarting or updating the NAS containers</b>).
@@ -344,7 +344,7 @@
           Current:
           <code>{{ container_runtime.get('memory_limit_human') or 'waiting for heartbeat' }}</code>
           {% if container_runtime.get('docker_socket') is sameas false %}
-          · runtime updates require the next container recreate
+          · Docker socket not mounted on the NAS container — the configured value cannot be applied at runtime
           {% endif %}
           {% if container_runtime.get('error') %}
           · {{ container_runtime.get('error') }}
