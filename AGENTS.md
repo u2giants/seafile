@@ -551,6 +551,20 @@ Configured Microsoft Entra OAuth, preserved secrets out of output, transferred N
 Rule added to prevent recurrence:
 Back up DB/config before destructive account or ownership changes; keep secrets out of output; document account identities by internal username plus contact email.
 
+### 2026-10-26 Seafile restart failed: user count over license cap
+
+What happened:
+Deploying the landed `sudo_mode.html` override required `docker restart seafile`; startup failed with `users exceeds limit, max 10, current 11` and the public site returned 502.
+
+Impact:
+Full outage (~40 minutes). Cause was NOT the template: two Microsoft SSO self-registrations the same afternoon had pushed active users to 11, one over the Seafile Pro free-tier cap; the check only runs at startup.
+
+Recovery:
+Backed up `ccnet_db`/`seahub_db`, deactivated the duplicate no-profile account, restarted cleanly. Albert then erased that duplicate in the UI. Backup kept at `/home/ai/seafile-db-backup-20261026.sql` on the VPS.
+
+Rule added to prevent recurrence:
+Before any planned `seafile` container restart, verify the `ccnet_db.EmailUser` count is at most 10. The license ceiling stands until upgraded: an 11th self-registered user will take the server down on its next restart.
+
 ## Pending work
 
 | Status | Item | Owner/next action |
