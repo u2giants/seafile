@@ -178,6 +178,9 @@ import json
 import socket as socket_mod
 import threading
 
+# GitHub Actions runners do not export HOSTNAME, so pin the container name.
+os.environ["SEAF_CONTAINER_NAME"] = "seaf-cli-test"
+
 fake_dir = Path(tempfile.mkdtemp())
 fake_sock = fake_dir / "docker.sock"
 server = socket_mod.socket(socket_mod.AF_UNIX, socket_mod.SOCK_STREAM)
