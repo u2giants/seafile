@@ -208,6 +208,17 @@ def serve():
                 break
             data += chunk
         head, _, body = data.partition(b"\r\n\r\n")
+        # Read the full request body before replying, or the client can
+        # hit a broken pipe while still sending (seen on CI runners).
+        content_length = 0
+        for line in head.split(b"\r\n"):
+            if line.lower().startswith(b"content-length:"):
+                content_length = int(line.split(b":", 1)[1].strip())
+        while len(body) < content_length:
+            chunk = conn.recv(65536)
+            if not chunk:
+                break
+            body += chunk
         request_line = head.split(b"\r\n")[0].decode()
         seen.append((request_line, body.decode()))
         if "/update" in request_line:
