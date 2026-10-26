@@ -481,6 +481,17 @@ def _normalize_memory_limit(value: str) -> str | None:
     return raw
 
 
+MEMORY_UNIT_BYTES = {"b": 1, "k": 1024, "m": 1024 ** 2, "g": 1024 ** 3}
+# Docker rejects updates below roughly 6 MiB; keep a slightly safer floor.
+MIN_CONTAINER_MEMORY_BYTES = 16 * 1024 ** 2
+
+
+def _memory_limit_bytes(normalized: str) -> int:
+    if normalized == "0":
+        return 0
+    return int(normalized[:-1]) * MEMORY_UNIT_BYTES[normalized[-1]]
+
+
 def _queue_command(uuid: str, verb: str, args: dict | None = None) -> str:
     cmd = {
         "id": uuid4().hex[:12],
@@ -627,11 +638,17 @@ def index():
         memory_limit = _normalize_memory_limit(
             request.form.get("container_memory_limit", previous_stored)
         )
+        if memory_limit is not None and (
+            _memory_limit_bytes(memory_limit) < MIN_CONTAINER_MEMORY_BYTES
+            and memory_limit != "0"
+        ):
+            memory_limit = None
         if memory_limit is None:
             memory_limit = previous_memory_limit
             memory_error = (
                 "Invalid memory limit — use a value like 8g, 4096m, or 0 for "
-                "unlimited. The previous limit was kept."
+                "unlimited (minimum 16m, unit required). The previous limit "
+                "was kept."
             )
         else:
             container_settings["memory_limit"] = memory_limit
@@ -659,12 +676,22 @@ def index():
             settings[lid]["schedule"] = _parse_schedule(request.form, lid)
 
         save_settings(settings)
-        if not memory_error and memory_limit != previous_memory_limit:
-            memory_command_id = _queue_command(
-                LIBRARIES[0]["uuid"],
-                "set_memory_limit",
-                {"memory_limit": memory_limit},
+        if not memory_error:
+            # A compose recreate resets the live limit to the compose value
+            # without touching settings.json, so also re-queue whenever the
+            # newest heartbeat reports a different live limit — re-saving the
+            # stored value must still restore it.
+            live_bytes = _latest_container_runtime().get("memory_limit")
+            drifted = (
+                isinstance(live_bytes, int)
+                and _memory_limit_bytes(memory_limit) != live_bytes
             )
+            if memory_limit != previous_memory_limit or drifted:
+                memory_command_id = _queue_command(
+                    LIBRARIES[0]["uuid"],
+                    "set_memory_limit",
+                    {"memory_limit": memory_limit},
+                )
         saved = True
 
     return render_template(

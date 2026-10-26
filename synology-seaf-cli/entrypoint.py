@@ -572,7 +572,11 @@ class Client:
             return "0", 0
         if not unit:
             return str(amount), amount
-        return f"{amount}{unit}", amount * MEMORY_UNITS[unit]
+        memory = amount * MEMORY_UNITS[unit]
+        if memory < 16 * 1024 ** 2:
+            # Mirrors the panel's floor; Docker rejects updates near 6 MiB.
+            raise ValueError("memory limit must be 0 or at least 16m")
+        return f"{amount}{unit}", memory
 
     def _format_bytes(self, value: int) -> str:
         if value <= 0:

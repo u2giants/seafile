@@ -167,6 +167,73 @@ check("daemon health flags low inotify limit",
 check("memory limit normalizes units",
       ep.Client._normalize_memory_limit(c, "8g") == ("8g", 8 * 1024 ** 3)
       and ep.Client._normalize_memory_limit(c, "4096m") == ("4096m", 4096 * 1024 ** 2))
+try:
+    ep.Client._normalize_memory_limit(c, "8k")
+    check("below-floor memory limit rejected", False)
+except ValueError as exc:
+    check("below-floor memory limit rejected", "at least 16m" in str(exc))
+
+print("== docker socket client (fake unix socket) ==")
+import json
+import socket as socket_mod
+import threading
+
+fake_dir = Path(tempfile.mkdtemp())
+fake_sock = fake_dir / "docker.sock"
+server = socket_mod.socket(socket_mod.AF_UNIX, socket_mod.SOCK_STREAM)
+server.bind(str(fake_sock))
+server.listen(4)
+seen = []
+
+def reply(request_line, body):
+    payload = json.dumps(body).encode()
+    return (
+        f"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+        f"Content-Length: {len(payload)}\r\nConnection: close\r\n\r\n"
+    ).encode() + payload
+
+def serve():
+    while True:
+        try:
+            conn, _ = server.accept()
+        except OSError:
+            return
+        data = b""
+        while b"\r\n\r\n" not in data:
+            chunk = conn.recv(65536)
+            if not chunk:
+                break
+            data += chunk
+        head, _, body = data.partition(b"\r\n\r\n")
+        request_line = head.split(b"\r\n")[0].decode()
+        seen.append((request_line, body.decode()))
+        if "/update" in request_line:
+            conn.sendall(reply(request_line, {"Warnings": None}))
+        else:
+            conn.sendall(reply(request_line, {
+                "HostConfig": {"Memory": 2 * 1024 ** 3,
+                               "MemorySwap": 4 * 1024 ** 3}}))
+        conn.close()
+
+threading.Thread(target=serve, daemon=True).start()
+ep.DOCKER_SOCKET = fake_sock
+runtime = ep.Client._container_runtime_status(c)
+check("docker status parses live memory",
+      runtime["memory_limit"] == 2 * 1024 ** 3
+      and runtime["memory_limit_human"] == "2g"
+      and runtime["memory_swap"] == 4 * 1024 ** 3)
+check("docker status request targets container inspect",
+      seen and seen[-1][0].startswith("GET /containers/")
+      and "/json" in seen[-1][0])
+set_output = ep.Client._set_container_memory_limit(c, "6g")
+check("docker update applies and reports",
+      set_output == "container memory limit set to 6g"
+      and seen[-1][0].startswith("POST /containers/")
+      and "/update" in seen[-1][0])
+check("docker update body pins memory and 2x swap",
+      json.loads(seen[-1][1]) == {"Memory": 6 * 1024 ** 3,
+                                  "MemorySwap": 12 * 1024 ** 3})
+server.close()
 
 spec = importlib.util.spec_from_file_location(
     "seaf_entrypoint", Path(__file__).with_name("seaf-entrypoint.py")
