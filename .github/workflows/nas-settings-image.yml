@@ -44,6 +44,9 @@ jobs:
       contents: read
       packages: write
     steps:
+      - name: Isolate docker credentials per job
+        run: echo "DOCKER_CONFIG=$RUNNER_TEMP/docker-config" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v6
 
       # buildx container driver — required for the type=gha cache export below.
