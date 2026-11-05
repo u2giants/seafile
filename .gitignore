@@ -3,3 +3,6 @@ CREDENTIALS.txt
 *.sql
 __pycache__/
 *.pyc
+
+# Generated AI review reports and evidence
+.ai/reviews/

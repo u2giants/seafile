@@ -187,6 +187,7 @@ Do not spend AI context on:
 - `coverage/`
 - `dist/`
 - `node_modules/`
+- `.ai/reviews/`
 - Build artifacts or generated output if any appear later
 - `lucid.md` unless the task is specifically about storage-strategy research
 
@@ -578,7 +579,7 @@ Recovery:
 Backed up `ccnet_db`/`seahub_db`, deactivated the duplicate no-profile account, restarted cleanly. Albert then erased that duplicate in the UI. Backup kept at `/home/ai/seafile-db-backup-20261026.sql` on the VPS.
 
 Rule added to prevent recurrence:
-Before any planned `seafile` container restart, verify the `ccnet_db.EmailUser` count is at most 10. The license ceiling stands until upgraded: an 11th self-registered user will take the server down on its next restart.
+Before any planned `seafile` container restart, compare the active `ccnet_db.EmailUser` count with `MaxUsers` in the effective `/opt/seafile-data/seafile/seafile-license.txt` and verify its expiration. Never assume the historical 10-user ceiling still applies. On November 5, 2026, the owner supplied an 11-user replacement expiring October 26, 2027; installation and live proof are tracked on issue #19. Ten staff plus the NAS sync account require all eleven seats; another account needs additional capacity first.
 
 Recurrence (same day, ~2:17 PM EST): a SECOND account for Joao Melhorance (`8ed31406…@auth.local`) appeared and pushed the count to 11; the backend's internal re-init failed user-manager setup, killing the RPC pipe while gunicorn kept serving — logged-in users saw Seahub's "server hiccup" 500 page instead of a 502. Same recovery: DB backup (`/home/ai/seafile-db-backup-20261026-incident2.sql`), deactivate the duplicate, restart, verified all-API-200.
 

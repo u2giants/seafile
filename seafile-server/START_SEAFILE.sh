@@ -20,10 +20,10 @@ fi
 
 # Check license
 echo -n "Checking license file... "
-if [ -f /opt/seafile-data/seafile-license.txt ]; then
+if [ -f /opt/seafile-data/seafile/seafile-license.txt ]; then
     echo "OK"
 else
-    echo "FAIL — /opt/seafile-data/seafile-license.txt not found"
+    echo "FAIL — /opt/seafile-data/seafile/seafile-license.txt not found"
     echo "Place the license file and re-run this script."
     exit 1
 fi
