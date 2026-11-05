@@ -91,3 +91,17 @@ Use `op://vibe_coding/...` references in committed templates (e.g. `.env.tpl`) a
 op://vibe_coding/<item>/<field>
 op://vibe_coding/<item>/<section>/<field>
 ```
+
+## Production Seafile recovery entry
+
+- Title: `Seafile runtime credentials - POP Creations (production, license and NAS API)`
+- Item ID: `cvy2b2dpmltpixyfx63hyy2a7q` in `vibe_coding`
+- Complete vendor license: `op://vibe_coding/cvy2b2dpmltpixyfx63hyy2a7q/SEAFILE_LICENSE_FILE`
+- Existing non-admin NAS API token: `op://vibe_coding/cvy2b2dpmltpixyfx63hyy2a7q/NAS_SYNC_API_TOKEN`
+- Private historical host-address excerpts and recovery context: `op://vibe_coding/cvy2b2dpmltpixyfx63hyy2a7q/notesPlain`
+
+Both credential fields are concealed. They were saved and checked by read-back during the November 5, 2026 closeout; no credential was rotated or newly granted. The license is the exact installed 1251-byte eleven-user file, expiring October 26, 2027. The NAS token belongs to the existing non-admin sync identity and was used only for bounded live read checks. Never print either field or put it in command arguments.
+
+The private note preserves the two original private-address excerpts removed from public `AGENTS.md`, including the NAS reference and the historical wrong-host incident. Those excerpts are history, not authoritative current targets. Resolve current machine facts through the managed machine atlas and prove the actual host before acting. No host configuration or service access changed when the references moved. Public Git history is retained.
+
+The runtime license must remain a real file because Seafile reads it at startup; the vault reference is the recoverable source, not a literal replacement string inside the vendor license file. Restore through a protected file or pipe with exact-byte hash verification, backup and the required review. Root-only database/old-license backups and app-managed owner attachments remain available outside Git.

@@ -18,6 +18,8 @@ live VPS.
 
 ## Start / Stop / Restart
 
+Before any restart, compare the active account count with the capacity and expiration in the [effective license](configuration.md#effective-seafile-license). The completed [November 5 recovery](../PLAN.md) explains the former 10-user/11-account startup failure; do not rerun its historical swap.
+
 All commands from `/opt/seafile/` as root.
 
 ```bash
