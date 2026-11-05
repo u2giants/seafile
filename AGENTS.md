@@ -44,6 +44,8 @@ Then load additional docs only when relevant:
 
 `HANDOFF.md` is required reading when it exists. It is temporary continuation context, not canonical architecture.
 
+[`PLAN.md`](PLAN.md) records the completed November 5, 2026 license recovery: read its STATUS first and do not repeat its historical replacement steps. Current license capacity is 11 users, expiring October 26, 2027. Runtime credential references and preserved historical private-address excerpts are in [`docs/1password.md`](docs/1password.md); do not restore private literals into public operating notes.
+
 ## Repository structure
 
 Project-owned code:
@@ -139,7 +141,7 @@ No upstream source files are modified in-repo; these are runtime template overri
 | GitHub repo | `https://github.com/u2giants/seafile` | Git remote | `main` only; no PR branch model documented |
 | Public host | `seafile.designflow.app` | `seafile-server/.env.example`, compose labels, live DNS | DNS-only through Cloudflare; do not proxy |
 | VPS | `172.233.14.233`, host `seafile-br` | docs/live host | Linode VPS running Seafile and `nas-settings`; do not confuse with other Hetzner/Tailscale hosts that may have stale repo clones |
-| NAS | `edgesynology1`, `192.168.3.100` | docs/runtime | Synology NAS; from the VPS use `ssh edge1` as `ai` over Tailscale MagicDNS |
+| NAS | `edgesynology1` (private address in the protected recovery reference) | docs/runtime | Synology NAS; from the VPS use `ssh edge1` as `ai` over Tailscale MagicDNS |
 | Microsoft Entra tenant | `1caeb1c0-a087-4cb9-b046-a5e22404f971` | live `seahub_settings.py`, docs | Tenant-locked POP Creations SSO |
 | Entra app/client | `8d9da03c-e5cd-4a23-b987-32aaaed31fe7` | live `seahub_settings.py`, docs | Client secret value is not committed |
 | Seafile admin account | `4cba3f5721f7436fbe06a2b154ee296a@auth.local` | `ccnet_db.EmailUser`, `seahub_db.profile_profile` | Contact email `albert@popcre.com`; current active admin |
@@ -296,7 +298,7 @@ Using stale two-service compose files or old container names can recreate the wr
 ### Verify the live VPS before deploying
 
 What changed:
-On 2026-06-16, a deployment attempt first landed on the wrong host (`root@hetz`, Tailscale IP `100.66.37.58`) where `/worksp/seafile` was a stale repo clone and no Seafile containers existed.
+On 2026-06-16, a deployment attempt first landed on the wrong host (`root@hetz`; historical private address in the protected recovery reference) where `/worksp/seafile` was a stale repo clone and no Seafile containers existed.
 
 Why:
 The live public host resolves to `172.233.14.233` and should identify as `seafile-br`; `/opt/seafile` holds the runtime `.env` and base compose files, while `nas-settings.yml` is deployed from `/home/ai/seafile-repo/seafile-server/nas-settings.yml`.

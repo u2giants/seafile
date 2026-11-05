@@ -1,8 +1,29 @@
+# STATUS — completed November 5, 2026
+
+All six steps are complete. **Historical execution evidence: do not redo the replacement.** The effective installed license now has SHA256 `dbc1940bf8ed8b430a9cbedae06419c25353061beaeb105b7cdc65f258fd0a23`, capacity 11, expiration October 26, 2027. The original ten-user hash below is a historical input and deliberately no longer matches the live file.
+
+| Step | Status | Evidence |
+|---|---|---|
+| 1. Prove target/count/guards and back up databases | done — November 5, 2026 | Verified seafile-br, exact mount/hash, 11 active accounts and disabled signup; protected transactional backup recorded on issue #19. |
+| 2. Back up and atomically replace effective license | done — November 5, 2026 | Pinned replacement hash installed and checked; original license preserved root-only. |
+| 3. Restart only Seafile | done — November 5, 2026 | Native account service recovered with capacity 11; other services and NAS configuration unchanged. |
+| 4. Verify actual account/library access | done — November 5, 2026 | Native count 11, original admin/Microsoft binding, account-info, all five libraries and bounded root listing passed; login page 200 and Microsoft redirect correct. |
+| 5. Evaluate failure containment | done — November 5, 2026 | Native server accepted the license; rollback was not needed or exercised. Backups remain available. |
+| 6. Publish operating knowledge | done — November 5, 2026 | Seafile PR #20 and albert-standards PR #7 merged; issue #19 closed. |
+
+Start here in a fresh session: there is no remaining implementation. Read the closed [recovery record](https://github.com/u2giants/seafile/issues/19) for proofs and the [configuration guide](docs/configuration.md) for current operation. A new incident needs fresh target/capacity checks, not a replay of this plan.
+
+Verification boundary: no personal Microsoft browser session was impersonated or claimed as tested. The owner explicitly retired the extra sign-in-confirmation request after the above live proofs; it is not an open task. PopDAM's separate source-history checks belong to its existing application issue and are not part of this completed license recovery.
+
+The rationale and exact pre-recovery inputs below are retained as history. Recorded shell syntax and existing Python suites passed (45 sync checks, 44 panel checks). Final exact-action GLM security approval and the successful production gate are recorded on issue #19. Nothing is pending or blocked in this workstream.
+
+---
+
 # Seafile 11-user license recovery — issue u2giants/seafile#19
 
 Request: owner attached the replacement Seafile license and requested installation in this chat. Keep all 11 active accounts, including NAS sync. No schema/data/account/SSO setting changes. This committed plan is the production-action review subject, not a request to review the historical CI change. Codex owns execution and follow-up; retire this plan into the incident record after completion.
 
-Exact production target: hostname seafile-br; container seafile; /opt/seafile-data bind-mounted to /shared. Container /opt/seafile/seafile-license.txt resolves to /shared/seafile/seafile-license.txt, host /opt/seafile-data/seafile/seafile-license.txt. Installed SHA256: 9d3e0b2079d4e9000a1a796feb21a7b5e4228a4a978b39b61c5f968e89c57561. It permits 10 users; all 11 active accounts cause repeated native-backend rejection and OAuth callback ConnectionRefusedError. Public host seafile.designflow.app.
+Exact production target: hostname seafile-br; container seafile; /opt/seafile-data bind-mounted to /shared. Container /opt/seafile/seafile-license.txt resolves to /shared/seafile/seafile-license.txt, host /opt/seafile-data/seafile/seafile-license.txt. Pre-recovery installed SHA256: 9d3e0b2079d4e9000a1a796feb21a7b5e4228a4a978b39b61c5f968e89c57561. It permits 10 users; all 11 active accounts cause repeated native-backend rejection and OAuth callback ConnectionRefusedError. Public host seafile.designflow.app.
 
 Owner-supplied replacement: /home/ai/.codex/attachments/3f37846f-552e-4e74-804e-f7e363f9f896/seafile-license.txt; exact SHA256 dbc1940bf8ed8b430a9cbedae06419c25353061beaeb105b7cdc65f258fd0a23; 1251 bytes; MaxUsers="11"; expires October 26, 2027. Never show license bytes or put them in Git/review snapshots. Metadata only here.
 
