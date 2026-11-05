@@ -155,8 +155,9 @@ Seafile requires these to be **separate buckets** — it will refuse to start if
 │   └── CREDENTIALS.txt          All passwords, UUIDs (chmod 600, root only)
 │
 ├── seafile-data/                Mounted as /shared in seafile container
-│   ├── seafile-license.txt      Pro license (required at startup)
+│   ├── seafile-license.txt      Obsolete nine-user copy; not the effective license
 │   └── seafile/
+│       ├── seafile-license.txt  Effective Pro license, linked inside /opt/seafile/
 │       ├── conf/                Config files (edited in place, persist across restarts)
 │       │   ├── seahub_settings.py
 │       │   ├── seafile.conf

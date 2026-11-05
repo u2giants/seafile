@@ -42,8 +42,8 @@ curl -s --aws-sigv4 "aws:amz:br-gru-1:s3" \
   "https://br-gru-1.linodeobjects.com/" | grep -o '<Name>[^<]*</Name>'
 
 # License valid?
-cat /opt/seafile-data/seafile-license.txt
-# Admin panel → System Info → Users limit (must not be 3)
+sudo python3 -c 'import re; from pathlib import Path; print(re.findall(r"(?im)^\s*(MaxUsers|Expiration)\s*=\s*(.*)$", Path("/opt/seafile-data/seafile/seafile-license.txt").read_text()))'
+# Show only capacity/expiration, never the license key. Compare capacity with active users.
 
 # seahub_settings.py syntax OK?
 docker exec seafile python3 -c "import ast; ast.parse(open('/shared/seafile/conf/seahub_settings.py').read()); print('OK')"

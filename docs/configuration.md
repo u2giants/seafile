@@ -156,7 +156,7 @@ TIME_ZONE = 'America/Sao_Paulo'
 ENABLE_OAUTH = True
 OAUTH_ENABLE_INSECURE_TRANSPORT = False
 # Unknown SSO identities are never auto-created: they get "registration is
-# not allowed" instead of silently creating an account over the 10-user
+# not allowed" instead of silently creating an account over the installed
 # license cap (see AGENTS.md 2026-10-26 incident). Onboard via pre-create
 # + social_auth_usersocialauth link before first sign-in.
 REMOTE_USER_CREATE_UNKNOWN_USER = False
@@ -273,3 +273,9 @@ Backs up all three MariaDB databases daily. Does **not** back up file data — t
 This deployment currently uses Docker Hub image `seafileltd/seafile-pro-mc:13.0-latest`, not `docker.seadrive.org`, for the Seafile server.
 
 If a future upgrade requires Seafile's private registry, obtain current registry instructions from Seafile's official customer/download portal and keep credential values out of this repo.
+
+## Effective Seafile license
+
+The effective file is `/opt/seafile-data/seafile/seafile-license.txt` on the VPS, mounted at `/shared/seafile/seafile-license.txt` and linked from `/opt/seafile/seafile-license.txt` in the application container. The root-level `/opt/seafile-data/seafile-license.txt` is an obsolete nine-user copy. Do not validate or replace that copy as the live license.
+
+The owner supplied an 11-user replacement expiring October 26, 2027, on November 5, 2026; issue #19 records installation and live proof. Verify capacity and expiration from the installed file, never print its key, and back up before replacement. Ten staff and NAS Sync consume eleven seats. Keep automatic unknown-user registration disabled and check capacity before onboarding or restart.
