@@ -44,7 +44,7 @@ Then load additional docs only when relevant:
 
 `HANDOFF.md` is required reading when it exists. It is temporary continuation context, not canonical architecture.
 
-[`PLAN.md`](PLAN.md) records the completed November 5, 2026 license recovery: read its STATUS first and do not repeat its historical replacement steps. Current license capacity is 11 users, expiring October 26, 2027. Runtime credential references and preserved historical private-address excerpts are in [`docs/1password.md`](docs/1password.md); do not restore private literals into public operating notes.
+[`PLAN.md`](PLAN.md) records the completed November 5, 2026 license recovery: read its STATUS first and do not repeat its historical replacement steps. Current license capacity is 12 users, expiring October 26, 2027 (installed November 9, 2026). Runtime credential references and preserved historical private-address excerpts are in [`docs/1password.md`](docs/1password.md); do not restore private literals into public operating notes.
 
 ## Repository structure
 
@@ -582,6 +582,8 @@ Backed up `ccnet_db`/`seahub_db`, deactivated the duplicate no-profile account, 
 
 Rule added to prevent recurrence:
 Before any planned `seafile` container restart, compare the active `ccnet_db.EmailUser` count with `MaxUsers` in the effective `/opt/seafile-data/seafile/seafile-license.txt` and verify its expiration. Never assume the historical 10-user ceiling still applies. On November 5, 2026, the owner supplied an 11-user replacement expiring October 26, 2027; installation and live proof are tracked on issue #19. Ten staff plus the NAS sync account require all eleven seats; another account needs additional capacity first.
+
+Recurrence (2026-11-09): onboarding Claudia Cadena (ccadena@popcre.com) on November 5 made 12 accounts; the next restart failed with `users exceeds limit, max 11, current 12` and the site showed "Error, please contact administrator." The owner supplied a 12-user license (same expiry); it was installed (previous file kept as `seafile-license.txt.bak-20261109-11user`) and Seafile restarted cleanly. All 12 seats (11 staff + NAS sync) are now used: buy capacity before onboarding anyone else.
 
 Recurrence (same day, ~2:17 PM EST): a SECOND account for Joao Melhorance (`8ed31406…@auth.local`) appeared and pushed the count to 11; the backend's internal re-init failed user-manager setup, killing the RPC pipe while gunicorn kept serving — logged-in users saw Seahub's "server hiccup" 500 page instead of a 502. Same recovery: DB backup (`/home/ai/seafile-db-backup-20261026-incident2.sql`), deactivate the duplicate, restart, verified all-API-200.
 
