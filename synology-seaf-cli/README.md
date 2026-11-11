@@ -270,7 +270,7 @@ cleared.
 
 To release a runtime change to `Dockerfile` or `entrypoint.py`:
 
-1. Commit to `main` — GitHub Actions builds and pushes two tags: `ghcr.io/u2giants/seafile:seaf-cli-latest` (mutable pointer) and `ghcr.io/u2giants/seafile:sha-<commit>` (immutable, for audit + rollback)
+1. Merge via pull request — GitHub Actions builds and pushes two tags: `ghcr.io/u2giants/seafile:seaf-cli-latest` (mutable pointer) and `ghcr.io/u2giants/seafile:sha-<commit>` (immutable, for audit + rollback)
 2. Wait for CI to pass: https://github.com/u2giants/seafile/actions
 3. Pull + recreate the container on edgesynology1.
 

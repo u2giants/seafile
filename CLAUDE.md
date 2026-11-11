@@ -18,7 +18,7 @@ Use `.claudeignore` for context economy. It mirrors `.cursorignore`; both are al
 
 ## Branch & deployment model
 
-- **`main` only.** Commit straight to `main` — no feature branches, no PRs.
+- **Pull requests to `main`.** Work on a feature branch, open a PR, let checks pass; never push directly to `main`.
 - **CI publishes; it does not deploy.** `.github/workflows/seaf-cli-image.yml` and `nas-settings-image.yml` lint, test, build, and push their images to GHCR. Deployment is a separate manual, repo-driven pull on the target host.
 - **SSH is NOT a CI deployment path.** GitHub Actions must never SSH into the VPS/NAS or run Docker there. Claude runs *on* the VPS and may run host commands for manual ops/debugging. NAS container recreates are manual operator SSH work on `edgesynology1`, not NAS MCP work. Production behavior must always be defined by repo files + published images.
 - GitHub Secrets hold no deploy/SSH keys — CI uses only `GITHUB_TOKEN`.

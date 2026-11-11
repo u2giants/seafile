@@ -27,7 +27,8 @@ synology-seaf-cli/            NYC Synology NAS — running on edgesynology1
 
 .github/workflows/
 ├── seaf-cli-image.yml        Lint + test + build + push seaf-cli wrapper image to GHCR
-└── nas-settings-image.yml    Lint + test + build + push nas-settings panel image to GHCR
+├── nas-settings-image.yml    Lint + test + build + push nas-settings panel image to GHCR
+└── doc-health.yml             Advisory documentation health check (never required)
 
 docs/                         INDEX.md (generated index) plus architecture,
                               configuration, deployment, development, incidents,

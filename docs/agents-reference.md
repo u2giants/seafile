@@ -135,8 +135,8 @@ Never commit actual secret values.
 | `SEAFILE_INTERNAL_URL` | Internal Seafile URL for admin checks | `seafile-server/nas-settings.yml` | no | yes |
 | `SEAFILE_PUBLIC_HOST` | Public host used by panel | `seafile-server/nas-settings.yml` | no | yes |
 | `SEAF_SERVER_URL` | Seafile URL for seaf-cli | NAS compose/env | no | yes |
-| `SEAF_USERNAME` | seaf-cli account username | NAS `/tmp/.env` | no | yes |
-| `SEAF_PASSWORD` | seaf-cli account password | NAS `/tmp/.env` | no | yes |
+| `SEAF_USERNAME` | seaf-cli account username | NAS `/volume1/docker/seaf-cli/.env` | no | yes |
+| `SEAF_PASSWORD` | seaf-cli account password | NAS `/volume1/docker/seaf-cli/.env` | no | yes |
 | `SEAF_TOKEN` | Optional seaf-cli auth token alternative | environment only if used | no | optional |
 | `SEAF_LIBRARY_<KEY>` | Multi-library UUID mapping; key maps to `/library/<key>` | NAS compose | no | yes |
 | `SEAF_LIBRARY` | Legacy single-library UUID; if set, multi-library vars are ignored | single-library env only | no | optional |

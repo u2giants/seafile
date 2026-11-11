@@ -10,6 +10,7 @@ on:
       - '**/*.md'
       - '.doc-health.json'
       - '.doc-reachability.json'
+      - '.github/workflows/doc-health.yml'
   push:
     branches: [main]
     paths:
@@ -18,7 +19,7 @@ on:
       - '.doc-reachability.json'
       - '.github/workflows/doc-health.yml'
   schedule:
-    - cron: '0 11 * * 1' # Mondays 6:00 AM EST
+    - cron: '0 11 * * 1' # Mondays 11:00 UTC (6:00 AM EST / 7:00 AM EDT)
   workflow_dispatch:
 
 concurrency:

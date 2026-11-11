@@ -56,7 +56,7 @@ The `nas-settings` container runs the **CI-built** image `ghcr.io/u2giants/seafi
 
 When anything under `seafile-server/nas-settings/` changes:
 
-1. Commit to `main` — GitHub Actions (`nas-settings image`) tests, builds, and pushes `nas-settings-latest` + `nas-settings-sha-<commit>` to GHCR.
+1. Merge via pull request — GitHub Actions (`nas-settings image`) tests, builds, and pushes `nas-settings-latest` + `nas-settings-sha-<commit>` to GHCR.
 2. Wait for CI: https://github.com/u2giants/seafile/actions (workflow: `nas-settings image`).
 3. Pull and recreate on the VPS:
 
@@ -168,7 +168,7 @@ If renewal fails: verify DNS still resolves correctly and port 80 is reachable (
 
 ### NAS-agent image already picked up
 
-The 2026-06-11 recreate pulled `ghcr.io/u2giants/seafile:seaf-cli-latest` and started the single `seaf-cli` service from current compose. If a future status payload lacks fields such as `folder_size_cache`, or if new `@eaDir` content keeps uploading after `seafile-ignore.txt` is present, first verify the running image digest and that the active compose config contains only the `seaf-cli` service. `/tmp` is wiped on reboot, so `/tmp/seaf-cli-compose-codex.yml` and `/tmp/.env` may need re-staging before a future recreate.
+The 2026-06-11 recreate pulled `ghcr.io/u2giants/seafile:seaf-cli-latest` and started the single `seaf-cli` service from current compose. If a future status payload lacks fields such as `folder_size_cache`, or if new `@eaDir` content keeps uploading after `seafile-ignore.txt` is present, first verify the running image digest and that the active compose config contains only the `seaf-cli` service. Historical `/tmp` staging (`/tmp/seaf-cli-compose-codex.yml`, `/tmp/.env`) is retired and wiped on reboot; the canonical stack directory is `/volume1/docker/seaf-cli/` with its own `.env` (see the [seaf-cli README](../synology-seaf-cli/README.md)).
 
 ### Designer user accounts
 Send designers `https://seafile.designflow.app`. Automatic account creation on first M365 SSO login is **off** (`REMOTE_USER_CREATE_UNKNOWN_USER = False`, see [incidents](incidents.md)): onboard by pre-creating the user in the admin UI and adding their Microsoft `social_auth_usersocialauth` link before their first sign-in, and buy license capacity first — all 12 seats are used. Albert then shares the relevant libraries via the web UI.

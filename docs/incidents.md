@@ -1,5 +1,5 @@
 ---
-summary: Critical incident write-ups: removed NAS containers, SSO duplicate bindings, license-cap restart outages, inotify exhaustion, /tmp env staging failure.
+summary: Critical incident write-ups: removed NAS containers, SSO duplicate admin binding, panel redirect, OAuth cleanup, license-cap restart outages.
 kind: living
 status: current
 read-when: debugging a familiar symptom before re-investigating
