@@ -1,3 +1,10 @@
+---
+summary: NAS seaf-cli wrapper image and canonical deployment at /volume1/docker/seaf-cli: supervision, status, schedules, ignore files, clone recovery, updates.
+kind: living
+status: current
+read-when: changing seaf-cli sync behavior or deploying on the NAS
+---
+
 # Synology seaf-cli — NAS Sync
 
 Shared NAS operating guidance also lives in [`albert-standards/synology/runbooks/seafile-sync-inotify.md`](https://github.com/u2giants/albert-standards/blob/main/synology/runbooks/seafile-sync-inotify.md). Update it when sync topology, inotify limits, ignore-file behavior, or NAS operating assumptions change here.
@@ -149,7 +156,7 @@ compose value, which then wins until the panel value is re-saved.
 **Security note:** the docker.sock mount grants this container root-equivalent
 control of Docker on the NAS host (it already runs as root with the live
 library mounts). Only two read/update routes are used; the recorded decision
-and blast radius live in `AGENTS.md` → "Intentional quirks".
+and blast radius live in [docs/idiosyncrasies.md](../../docs/idiosyncrasies.md).
 
 On each sync startup, the wrapper writes or refreshes `seafile-ignore.txt` in each library path. That ignore file includes Synology metadata directories
 such as `@eaDir` plus common temporary files.

@@ -1,3 +1,10 @@
+---
+summary: Deploy and rollback paths: verify the live VPS, start/stop, nas-settings image release, NAS seaf-cli staging and owner-run recreate, DNS, TLS, backups.
+kind: living
+status: current
+read-when: deploying, recreating, rolling back or verifying any part of the stack
+---
+
 # Deployment
 
 ## Verify Live VPS
@@ -18,7 +25,7 @@ live VPS.
 
 ## Start / Stop / Restart
 
-Before any restart, compare the active account count with the capacity and expiration in the [effective license](configuration.md#effective-seafile-license). The completed [November 5 recovery](../PLAN.md) explains the former 10-user/11-account startup failure; do not rerun its historical swap.
+Before any restart, compare the active account count with the capacity and expiration in the [effective license](configuration.md#effective-seafile-license). The completed [November 2026 recovery](plan-license-recovery-2026-11.md) explains the former 10-user/11-account startup failure; do not rerun its historical swap.
 
 All commands from `/opt/seafile/` as root.
 
@@ -43,7 +50,7 @@ All containers have `restart: unless-stopped` — they come back automatically a
 
 ## nas-settings Panel
 
-The `nas-settings` container runs the **CI-built** image `ghcr.io/u2giants/seafile:nas-settings-latest` (built + published by `.github/workflows/nas-settings-image.yml`). It is deployed from `seafile-server/nas-settings.yml` in the repo (not in `COMPOSE_FILE`) and managed separately. **Do not build it on the VPS** — pull the published image (§25 model; see AGENTS.md → Deployment).
+The `nas-settings` container runs the **CI-built** image `ghcr.io/u2giants/seafile:nas-settings-latest` (built + published by `.github/workflows/nas-settings-image.yml`). It is deployed from `seafile-server/nas-settings.yml` in the repo (not in `COMPOSE_FILE`) and managed separately. **Do not build it on the VPS** — always pull the published image.
 
 ### Release a code change to nas-settings
 
@@ -85,61 +92,29 @@ Currently running on: **NAS (edgesynology1)**.
 
 ### NAS deployment
 
-NAS deploys/recreates are done from the VPS over SSH:
+The canonical NAS deploy procedure — stack directory `/volume1/docker/seaf-cli/`, its `.env`, Watchtower auto-updates, and the 2026-06-21 incident that made it canonical — is [`synology-seaf-cli/README.md`](../synology-seaf-cli/README.md); read that first.
 
-```bash
-ssh edge1
-```
+The `ai` account (`ssh edge1` from the VPS) owns `/volume1/docker/seaf-cli/` but has **no** admin access on the NAS, and the owner ruled on 2026-10-26 that AI admin access will not be restored. AI stages file changes (copy the current repo `docker-compose.yml` into the stack directory) and hands the owner the exact `docker compose pull && docker compose up -d` command to run. Docker on Synology lives at `/var/packages/ContainerManager/target/usr/bin/docker` and is not in the default PATH.
 
-That logs in to `edgesynology1` as `ai`. Docker is not in PATH on Synology; use `/var/packages/ContainerManager/target/usr/bin/docker`. The `ai` account has passwordless sudo only for that Docker binary.
-
-Do not reuse an old `/tmp/seaf-cli-compose.yml` blindly. A stale two-service compose file has existed on the NAS; stage the current repo file and verify it before `up`:
-
-```bash
-DOCKER=/var/packages/ContainerManager/target/usr/bin/docker
-sudo -n $DOCKER compose -f /tmp/seaf-cli-compose-codex.yml --env-file /tmp/.env config --services
-# expected: seaf-cli
-```
+Do not reuse an old `/tmp/seaf-cli-compose.yml` or `/tmp/seaf-cli-compose-codex.yml`: stale two-service compose files have existed there, and `/tmp` is wiped on NAS reboot. Verify any staged compose file with `docker compose config --services` — the expected output is exactly `seaf-cli`.
 
 ### Release a code change to seaf-cli
 
 When `synology-seaf-cli/Dockerfile`, `entrypoint.py`, or `seaf-entrypoint.py` change:
 
-1. Commit to `main` — GitHub Actions builds and pushes the wrapper image automatically
-2. Wait for CI: https://github.com/u2giants/seafile/actions (workflow: `seaf-cli image`)
-3. Pull and recreate on `edgesynology1` over SSH:
+1. Commit via pull request — GitHub Actions builds and pushes the wrapper image automatically.
+2. Wait for CI: https://github.com/u2giants/seafile/actions (workflow: `seaf-cli image`).
+3. Routine image updates deploy themselves via Watchtower. If Watchtower cannot be waited on, stage the current compose file in the stack directory and hand the owner the exact `docker compose pull && docker compose up -d` command.
 
-```bash
-DOCKER=/var/packages/ContainerManager/target/usr/bin/docker
-
-# Rebuild /tmp/.env from the running container's env if needed; this avoids typing secrets.
-sudo -n $DOCKER inspect seaf-cli \
-  --format '{{range .Config.Env}}{{println .}}{{end}}' \
-  | grep -E '^(SEAF_USERNAME|SEAF_PASSWORD|SEAF_STATUS_TOKEN)=' | sudo -n tee /tmp/.env >/dev/null
-
-# Stage the current synology-seaf-cli/docker-compose.yml as /tmp/seaf-cli-compose-codex.yml first.
-sudo -n $DOCKER pull ghcr.io/u2giants/seafile:seaf-cli-latest
-sudo -n $DOCKER compose -f /tmp/seaf-cli-compose-codex.yml --env-file /tmp/.env up -d
-```
-
-If Compose fails because the existing `/seaf-cli` container name is already in use, remove only that container and run `up -d` again. The named `seaf-cli-data` volume preserves sync state:
-
-```bash
-sudo -n $DOCKER rm -f seaf-cli
-sudo -n $DOCKER compose -f /tmp/seaf-cli-compose-codex.yml --env-file /tmp/.env up -d
-```
+If a manual recreate is needed and Compose fails because the existing `seaf-cli` container name is in use, the owner removes only that container and runs `up -d` again. The named `seaf-cli-data` volume preserves sync state; never delete it for a failed-clone retry (see [incidents](incidents.md) and [idiosyncrasies](idiosyncrasies.md)).
 
 ### Release a compose-only change
 
 When only `synology-seaf-cli/docker-compose.yml` changes (environment, volumes — no image rebuild needed):
 
-1. Commit to `main` and push
-2. Write the updated compose file to `/tmp/seaf-cli-compose-codex.yml` on `edgesynology1`
-3. Recreate the container over SSH:
-```bash
-DOCKER=/var/packages/ContainerManager/target/usr/bin/docker
-sudo -n $DOCKER compose -f /tmp/seaf-cli-compose-codex.yml --env-file /tmp/.env up -d
-```
+1. Commit via pull request.
+2. Copy the updated compose file to `/volume1/docker/seaf-cli/docker-compose.yml` on `edgesynology1` over SSH.
+3. Hand the owner the exact `docker compose up -d` command; never run it as `ai` (no sudo), and never pass credentials via shell env — the stack's `.env` is loaded by `env_file:`.
 
 ### Automatic
 Daily cron at 3am dumps all MariaDB databases to `/opt/backups/seafile-db-YYYYMMDD.sql`. Files older than 30 days are deleted at 4am.
@@ -189,14 +164,14 @@ If renewal fails: verify DNS still resolves correctly and port 80 is reachable (
 
 ## Remaining Work
 
-> Live state and the authoritative pending list are in `AGENTS.md` -> Pending work. As of 2026-06-16 the NAS `seaf-cli` container has been recreated on the current image, is healthy, and the recreated `nas-settings` container is receiving one status POST per synced library roughly every 30 seconds.
+> Live state and the authoritative pending list are in [`pending-work.md`](pending-work.md). As of 2026-06-16 the NAS `seaf-cli` container has been recreated on the current image, is healthy, and the recreated `nas-settings` container is receiving one status POST per synced library roughly every 30 seconds.
 
 ### NAS-agent image already picked up
 
 The 2026-06-11 recreate pulled `ghcr.io/u2giants/seafile:seaf-cli-latest` and started the single `seaf-cli` service from current compose. If a future status payload lacks fields such as `folder_size_cache`, or if new `@eaDir` content keeps uploading after `seafile-ignore.txt` is present, first verify the running image digest and that the active compose config contains only the `seaf-cli` service. `/tmp` is wiped on reboot, so `/tmp/seaf-cli-compose-codex.yml` and `/tmp/.env` may need re-staging before a future recreate.
 
 ### Designer user accounts
-Send designers `https://seafile.designflow.app` — accounts are created automatically on first M365 SSO login (requires a POP Creations Microsoft account in the tenant). Albert then shares the relevant libraries via the web UI.
+Send designers `https://seafile.designflow.app`. Automatic account creation on first M365 SSO login is **off** (`REMOTE_USER_CREATE_UNKNOWN_USER = False`, see [incidents](incidents.md)): onboard by pre-creating the user in the admin UI and adding their Microsoft `social_auth_usersocialauth` link before their first sign-in, and buy license capacity first — all 12 seats are used. Albert then shares the relevant libraries via the web UI.
 
 To share a library: log in → open library → Share → Share to User → enter designer email → Read/Write.
 

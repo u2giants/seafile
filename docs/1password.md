@@ -1,3 +1,10 @@
+---
+summary: How to pull this repo's secrets from the 1Password vibe_coding vault: MCP server for AI clients, op CLI for scripts, protected production recovery entry.
+kind: ops
+status: current
+read-when: pulling secrets or reading the protected recovery reference
+---
+
 # Using 1Password in this repo
 
 Two ways to pull secrets from 1Password instead of hardcoding them:

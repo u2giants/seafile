@@ -1,3 +1,10 @@
+---
+summary: Standalone storage-strategy research comparing LucidLink, JuiceFS, Resilio and Synology for the distributed design workflow; not part of the deployed system.
+kind: spec
+status: current
+read-when: storage-strategy research (LucidLink/JuiceFS/Resilio/Synology)
+---
+
 # LucidLink / JuiceFS / Resilio / Synology Strategy Notes
 
 ## Context

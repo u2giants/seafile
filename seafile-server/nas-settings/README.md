@@ -1,3 +1,10 @@
+---
+summary: Flask admin panel bridging Seafile's web UI to the NAS seaf-cli client: pages, polling control bridge, heartbeat, auth, public API, tests, build and deploy.
+kind: living
+status: current
+read-when: changing the NAS Settings panel or its API
+---
+
 # nas-settings
 
 Flask web app that gives the Seafile server's web UI a **GUI for the seaf-cli client**
@@ -165,7 +172,7 @@ Persisted under `/data/` inside the `nas-settings-data` Docker volume:
 
 The image is **built by CI** (`.github/workflows/nas-settings-image.yml`) and published to
 GHCR as `ghcr.io/u2giants/seafile:nas-settings-latest` (+ `:nas-settings-sha-<commit>`).
-Deploy = **pull** that image — do not build on the VPS (§25 model; see AGENTS.md → Deployment).
+Deploy = **pull** that image — do not build on the VPS (see [docs/deployment.md](../../docs/deployment.md)).
 
 ```bash
 # 1. Commit changes under seafile-server/nas-settings/ to main; wait for the

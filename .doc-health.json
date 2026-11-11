@@ -1,0 +1,6 @@
+{
+  "exclude": [".claude/**", ".github/**"],
+  "router": "AGENTS.md",
+  "router_max_bytes": 25000,
+  "root_markdown_allow": ["AGENTS.md", "CLAUDE.md", "README.md", "HANDOFF.md"]
+}

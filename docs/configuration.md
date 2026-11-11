@@ -1,3 +1,10 @@
+---
+summary: Every runtime config: /opt/seafile/.env values, seahub_settings.py SSO, seafile.conf limits, seafevents, WebDAV, cron backups, sysctl, effective license.
+kind: living
+status: current
+read-when: adding or changing env vars, secrets, runtime settings or the license
+---
+
 # Configuration Reference
 
 ## /opt/seafile/.env
@@ -157,7 +164,7 @@ ENABLE_OAUTH = True
 OAUTH_ENABLE_INSECURE_TRANSPORT = False
 # Unknown SSO identities are never auto-created: they get "registration is
 # not allowed" instead of silently creating an account over the installed
-# license cap (see AGENTS.md 2026-10-26 incident). Onboard via pre-create
+# license cap (see [incidents](incidents.md), 2026-10-26). Onboard via pre-create
 # + social_auth_usersocialauth link before first sign-in.
 REMOTE_USER_CREATE_UNKNOWN_USER = False
 OAUTH_CLIENT_ID = '<see CREDENTIALS.txt on VPS>'

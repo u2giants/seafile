@@ -1,3 +1,10 @@
+---
+summary: Seahub template overrides (Microsoft login button, admin sidebar links, sudo mode) deployed to the custom templates dir; re-diff after every Seafile upgrade.
+kind: living
+status: current
+read-when: changing login branding or sidebar links
+---
+
 # custom-templates
 
 Django template overrides for Seahub. Files here are deployed to `/opt/seafile-data/seafile/seahub-data/custom/templates/` on the VPS, which Seafile loads before its own built-in templates.

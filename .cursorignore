@@ -10,7 +10,7 @@ dist/
 node_modules/
 
 # Context economy (not path-ignored, just guidance): load docs via the "Documentation map"
-# in AGENTS.md rather than all at once. lucid.md is standalone storage-strategy research —
+# in AGENTS.md rather than all at once. docs/lucid-storage-strategy.md is standalone storage-strategy research —
 # skip it unless the task is specifically about that strategy.
 
 # Generated AI review reports and evidence
