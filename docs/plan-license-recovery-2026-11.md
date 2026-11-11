@@ -1,3 +1,10 @@
+---
+summary: Completed November 5, 2026 license recovery plan: proof, backups, atomic 11-user license replacement, restart, verification, publication. Do not rerun it.
+kind: plan
+status: done
+read-when: license-capacity questions or a similar recovery
+---
+
 # STATUS — completed November 5, 2026
 
 All six steps are complete. **Historical execution evidence: do not redo the replacement.** The effective installed license now has SHA256 `dbc1940bf8ed8b430a9cbedae06419c25353061beaeb105b7cdc65f258fd0a23`, capacity 11, expiration October 26, 2027. The original ten-user hash below is a historical input and deliberately no longer matches the live file.
@@ -11,7 +18,7 @@ All six steps are complete. **Historical execution evidence: do not redo the rep
 | 5. Evaluate failure containment | done — November 5, 2026 | Native server accepted the license; rollback was not needed or exercised. Backups remain available. |
 | 6. Publish operating knowledge | done — November 5, 2026 | Seafile PR #20 and albert-standards PR #7 merged; issue #19 closed. |
 
-Start here in a fresh session: there is no remaining implementation. Read the closed [recovery record](https://github.com/u2giants/seafile/issues/19) for proofs and the [configuration guide](docs/configuration.md) for current operation. A new incident needs fresh target/capacity checks, not a replay of this plan.
+Start here in a fresh session: there is no remaining implementation. Read the closed [recovery record](https://github.com/u2giants/seafile/issues/19) for proofs and the [configuration guide](configuration.md) for current operation. A new incident needs fresh target/capacity checks, not a replay of this plan.
 
 Verification boundary: no personal Microsoft browser session was impersonated or claimed as tested. The owner explicitly retired the extra sign-in-confirmation request after the above live proofs; it is not an open task. PopDAM's separate source-history checks belong to its existing application issue and are not part of this completed license recovery.
 

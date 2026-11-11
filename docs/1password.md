@@ -1,3 +1,10 @@
+---
+summary: How to pull this repo's secrets from the 1Password vibe_coding vault: MCP server for AI clients, op CLI for scripts, protected production recovery entry.
+kind: ops
+status: current
+read-when: pulling secrets or reading the protected recovery reference
+---
+
 # Using 1Password in this repo
 
 Two ways to pull secrets from 1Password instead of hardcoding them:
@@ -100,7 +107,7 @@ op://vibe_coding/<item>/<section>/<field>
 - Existing non-admin NAS API token: `op://vibe_coding/cvy2b2dpmltpixyfx63hyy2a7q/NAS_SYNC_API_TOKEN`
 - Private historical host-address excerpts and recovery context: `op://vibe_coding/cvy2b2dpmltpixyfx63hyy2a7q/notesPlain`
 
-Both credential fields are concealed. They were saved and checked by read-back during the November 5, 2026 closeout; no credential was rotated or newly granted. The license is the exact installed 1251-byte eleven-user file, expiring October 26, 2027. The NAS token belongs to the existing non-admin sync identity and was used only for bounded live read checks. Never print either field or put it in command arguments.
+Both credential fields are concealed. They were saved and checked by read-back during the November 5, 2026 closeout; no credential was rotated or newly granted. As of that closeout the license field held the exact installed 1251-byte eleven-user file, expiring October 26, 2027. On November 9, 2026 a twelve-user license replaced it on the VPS (old file kept as `seafile-license.txt.bak-20261109-11user`); the vault copy has NOT been re-verified or refreshed since — before restoring from the vault, compare its `MaxUsers` and byte size against the current seat count, or the restore reproduces the 2026-11-09 startup failure. The NAS token belongs to the existing non-admin sync identity and was used only for bounded live read checks. Never print either field or put it in command arguments.
 
 The private note preserves the two original private-address excerpts removed from public `AGENTS.md`, including the NAS reference and the historical wrong-host incident. Those excerpts are history, not authoritative current targets. Resolve current machine facts through the managed machine atlas and prove the actual host before acting. No host configuration or service access changed when the references moved. Public Git history is retained.
 

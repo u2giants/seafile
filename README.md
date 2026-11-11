@@ -2,7 +2,7 @@
 
 Infrastructure for the Seafile Pro file sync deployment serving POP Creations designers.
 
-8 designers in São Paulo access a file library that lives on Synology NAS devices in a NYC office. This repo contains everything to operate both sides of the system.
+POP Creations designers access a file library that lives on Synology NAS devices in a NYC office. This repo contains everything to operate both sides of the system.
 
 > Internal: see [docs/1password.md](docs/1password.md) for 1Password access (MCP server + op CLI).
 
@@ -27,14 +27,16 @@ synology-seaf-cli/            NYC Synology NAS — running on edgesynology1
 
 .github/workflows/
 ├── seaf-cli-image.yml        Lint + test + build + push seaf-cli wrapper image to GHCR
-└── nas-settings-image.yml    Lint + test + build + push nas-settings panel image to GHCR
+├── nas-settings-image.yml    Lint + test + build + push nas-settings panel image to GHCR
+└── doc-health.yml             Advisory documentation health check (never required)
 
-docs/
-├── architecture.md           System design, containers, data flow, storage
-├── configuration.md          All env vars, config files, and their meanings
-├── deployment.md             Start/stop, updates, backup, DNS, NAS image releases
-└── development.md            Logs, debugging, API usage, user management
+docs/                         INDEX.md (generated index) plus architecture,
+                              configuration, deployment, development, incidents,
+                              idiosyncrasies, identifiers, pending-work, and
+                              agents-reference — see docs/INDEX.md
 ```
+
+Folder guides: [nas-settings panel](seafile-server/nas-settings/README.md), [custom templates](seafile-server/custom-templates/README.md), [Synology seaf-cli](synology-seaf-cli/README.md).
 
 ## Live System
 
@@ -44,14 +46,14 @@ docs/
 | Server | Linode VPS · 172.233.14.233 · Ubuntu 24.04 · Seafile Pro `13.0-latest` |
 | Admin | `albert@popcre.com` via M365 SSO; internal Seafile username `4cba3f5721f7436fbe06a2b154ee296a@auth.local` |
 | Images (GHCR) | `:seaf-cli-latest` and `:nas-settings-latest` (+ immutable `:sha-<commit>` / `:nas-settings-sha-<commit>` per build) |
-| Branch model | `main` only — no branches, no PRs |
+| Branch model | Pull requests to `main`; never push directly to `main` |
 | Credentials | `/opt/seafile/CREDENTIALS.txt` on the VPS (root-only, never in this repo) |
 | GitHub | https://github.com/u2giants/seafile |
 
-> **Current status (verified 2026-06-16):** VPS server, `nas-settings`, and the Synology `seaf-cli` container are running. The NAS container is healthy and the panel is receiving one status heartbeat per synced library from the current image; see `AGENTS.md` for current pending work.
+> **Current status (verified 2026-06-16):** VPS server, `nas-settings`, and the Synology `seaf-cli` container are running. The NAS container is healthy and the panel is receiving one status heartbeat per synced library from the current image; see [`docs/pending-work.md`](docs/pending-work.md) for current pending work.
 
 ## AI Sessions
 
-Start with **`AGENTS.md`** in this repo root. All context is there.
+Start with **`AGENTS.md`** in this repo root: it is the router to every document. The generated index is [`docs/INDEX.md`](docs/INDEX.md).
 
 Shared infrastructure/NAS standards that apply beyond this repo live in [`u2giants/albert-standards`](https://github.com/u2giants/albert-standards): read [`infrastructure/seafile.md`](https://github.com/u2giants/albert-standards/blob/main/infrastructure/seafile.md) and [`synology/runbooks/seafile-sync-inotify.md`](https://github.com/u2giants/albert-standards/blob/main/synology/runbooks/seafile-sync-inotify.md) for infrastructure, server, NAS, or operating-environment changes. Update those standards in the same session when decisions here change the shared environment.

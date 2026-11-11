@@ -1,3 +1,10 @@
+---
+summary: Operations runbook: container logs, common debug checks, NAS seaf-cli debugging, troubleshooting, Seafile API usage, and user management.
+kind: living
+status: current
+read-when: debugging, checking logs, using the Seafile API or managing users
+---
+
 # Development & Operations
 
 ## Logs

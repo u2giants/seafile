@@ -1,3 +1,10 @@
+---
+summary: Every runtime config: /opt/seafile/.env values, seahub_settings.py SSO, seafile.conf limits, seafevents, WebDAV, cron backups, sysctl, effective license.
+kind: living
+status: current
+read-when: adding or changing env vars, secrets, runtime settings or the license
+---
+
 # Configuration Reference
 
 ## /opt/seafile/.env
@@ -157,7 +164,7 @@ ENABLE_OAUTH = True
 OAUTH_ENABLE_INSECURE_TRANSPORT = False
 # Unknown SSO identities are never auto-created: they get "registration is
 # not allowed" instead of silently creating an account over the installed
-# license cap (see AGENTS.md 2026-10-26 incident). Onboard via pre-create
+# license cap (see [incidents](incidents.md), 2026-10-26). Onboard via pre-create
 # + social_auth_usersocialauth link before first sign-in.
 REMOTE_USER_CREATE_UNKNOWN_USER = False
 OAUTH_CLIENT_ID = '<see CREDENTIALS.txt on VPS>'
@@ -278,4 +285,4 @@ If a future upgrade requires Seafile's private registry, obtain current registry
 
 The effective file is `/opt/seafile-data/seafile/seafile-license.txt` on the VPS, mounted at `/shared/seafile/seafile-license.txt` and linked from `/opt/seafile/seafile-license.txt` in the application container. The root-level `/opt/seafile-data/seafile-license.txt` is an obsolete nine-user copy. Do not validate or replace that copy as the live license.
 
-The owner-supplied 11-user replacement was installed and verified on November 5, 2026, and expires October 26, 2027; closed issue #19 records the exact-action approval, backups and live proof. Verify capacity and expiration from the installed file, never print its key, and back up before replacement. Ten staff and NAS Sync consume eleven seats. Keep automatic unknown-user registration disabled and check capacity before onboarding or restart.
+The owner-supplied 12-user replacement was installed and verified on November 9, 2026 (previous 11-user file kept as `seafile-license.txt.bak-20261109-11user`), and expires October 26, 2027; closed issue #19 records the exact-action approval, backups and live proof of the original recovery. Verify capacity and expiration from the installed file, never print its key, and back up before replacement. Eleven staff plus the NAS sync account consume all twelve seats. Keep automatic unknown-user registration disabled and check capacity before onboarding or restart.
