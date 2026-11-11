@@ -10,7 +10,7 @@ Data model, external identifiers, and the container/service inventory, moved out
 
 | Entity/System | Identifier | Where defined | Notes |
 |---|---|---|---|
-| GitHub repo | `https://github.com/u2giants/seafile` | Git remote | `main` only; no PR branch model documented |
+| GitHub repo | `https://github.com/u2giants/seafile` | Git remote | Pull requests to `main`; never push directly |
 | Public host | `seafile.designflow.app` | `seafile-server/.env.example`, compose labels, live DNS | DNS-only through Cloudflare; do not proxy |
 | VPS | `172.233.14.233`, host `seafile-br` | docs/live host | Linode VPS running Seafile and `nas-settings`; do not confuse with other Hetzner/Tailscale hosts that may have stale repo clones |
 | NAS | `edgesynology1` (private address in the protected recovery reference) | docs/runtime | Synology NAS; from the VPS use `ssh edge1` as `ai` over Tailscale MagicDNS |

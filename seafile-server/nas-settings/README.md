@@ -175,7 +175,7 @@ GHCR as `ghcr.io/u2giants/seafile:nas-settings-latest` (+ `:nas-settings-sha-<co
 Deploy = **pull** that image — do not build on the VPS (see [docs/deployment.md](../../docs/deployment.md)).
 
 ```bash
-# 1. Commit changes under seafile-server/nas-settings/ to main; wait for the
+# 1. Merge changes under seafile-server/nas-settings/ via pull request; wait for the
 #    "nas-settings image" workflow to publish: https://github.com/u2giants/seafile/actions
 # 2. Pull + recreate on the VPS:
 cd /opt/seafile

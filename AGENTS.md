@@ -102,6 +102,7 @@ Real deployment path (details and commands in [`docs/deployment.md`](docs/deploy
 - Rollback: pin the affected service image to an older immutable `sha-<commit>` tag and recreate.
 - GitHub Actions must not SSH to production or run Docker there.
 
+<!-- ansible-host-policy: managed rollout from u2giants/ansible -->
 ## Host / server changes — do NOT make them here
 
 The `hetz` server's host/OS layer is managed by **Ansible** in **[`u2giants/ansible`](https://github.com/u2giants/ansible)**. To change the server (packages, users, firewall, DNS, Docker *engine* config, system cron, systemd units, Cloudflare Tunnel 1, the backup watchdog), **open a PR there** and let CI apply it — **never** SSH into the box and hand-edit it. Manual changes are drift and get reverted by the next apply. See [`u2giants/ansible/AGENTS.md`](https://github.com/u2giants/ansible/blob/main/AGENTS.md).

@@ -15,4 +15,3 @@ Pending work, moved out of AGENTS.md on 2026-11-11. Keep this board current inst
 | optional | Move NAS compose/env staging out of `/tmp` | Use a persistent NAS path such as `/volume1/docker/seaf-cli/` if an operator wants easier recreates |
 | optional | Pin `flrnnc/seafile-client` base image by digest | Improves reproducibility but requires a documented bump procedure |
 | optional | Elasticsearch/full-text search | Requires RAM planning; current connection errors are expected because Elasticsearch is not deployed |
-<!-- ansible-host-policy: managed rollout from u2giants/ansible -->

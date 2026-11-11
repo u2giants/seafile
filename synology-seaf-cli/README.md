@@ -156,7 +156,7 @@ compose value, which then wins until the panel value is re-saved.
 **Security note:** the docker.sock mount grants this container root-equivalent
 control of Docker on the NAS host (it already runs as root with the live
 library mounts). Only two read/update routes are used; the recorded decision
-and blast radius live in [docs/idiosyncrasies.md](../../docs/idiosyncrasies.md).
+and blast radius live in [docs/idiosyncrasies.md](../docs/idiosyncrasies.md).
 
 On each sync startup, the wrapper writes or refreshes `seafile-ignore.txt` in each library path. That ignore file includes Synology metadata directories
 such as `@eaDir` plus common temporary files.
