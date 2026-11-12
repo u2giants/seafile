@@ -73,6 +73,8 @@ $env:OP_SERVICE_ACCOUNT_TOKEN = "<your-service-account-token>"   # Windows Power
 
 (Interactive desktop users can instead run `op signin`.)
 
+On `seafile-br` the token already exists: read it from `~/.config/ai-devops/op-service-account` into the environment — `export OP_SERVICE_ACCOUNT_TOKEN="$(< ~/.config/ai-devops/op-service-account)"` — and never print it. That service account reaches only the `vibe_coding` vault. `op account list` shows empty and `op whoami` fails without it, which is not evidence the machine lacks vault access.
+
 Common commands (always against the `vibe_coding` vault):
 
 ```bash
