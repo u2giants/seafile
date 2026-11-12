@@ -166,7 +166,9 @@ OAUTH_ENABLE_INSECURE_TRANSPORT = False
 # not allowed" instead of silently creating an account over the installed
 # license cap (see [incidents](incidents.md), 2026-10-26). Onboard via pre-create
 # + social_auth_usersocialauth link before first sign-in.
-REMOTE_USER_CREATE_UNKNOWN_USER = False
+REMOTE_USER_CREATE_UNKNOWN_USER = False   # not read by the OAuth backend
+OAUTH_CREATE_UNKNOWN_USER = False         # the setting the OAuth backend actually reads (fixed 2026-11-12)
+OAUTH_ACTIVATE_USER_AFTER_CREATION = False  # backstop: any auto-created user starts inactive (no seat used)
 OAUTH_CLIENT_ID = '<see CREDENTIALS.txt on VPS>'
 OAUTH_CLIENT_SECRET = '<see CREDENTIALS.txt on VPS>'
 OAUTH_REDIRECT_URL = 'https://seafile.designflow.app/oauth/callback/'
