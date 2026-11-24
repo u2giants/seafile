@@ -1,5 +1,5 @@
 ---
-summary: Deploy and rollback paths: verify the live VPS, start/stop, nas-settings image release, NAS seaf-cli staging and owner-run recreate, DNS, TLS, backups.
+summary: Deploy and rollback paths: verify the live VPS, start/stop, server updates, nas-settings release, NAS seaf-cli deploy and owner-run recreate, DNS, TLS, backups.
 kind: living
 status: current
 read-when: deploying, recreating, rolling back or verifying any part of the stack
@@ -47,6 +47,43 @@ docker compose -f /opt/seafile/seafile-server.yml -f /opt/seafile/caddy.yml ps
 ```
 
 All containers have `restart: unless-stopped` — they come back automatically after a reboot.
+
+## Seafile Server Updates (Same 13.0 Line)
+
+`SEAFILE_IMAGE` is the floating `seafileltd/seafile-pro-mc:13.0-latest` tag and nothing on the VPS pulls it, so the server only moves when someone runs the steps below. `curl -s https://seafile.designflow.app/api2/server-info/` reports the running version; compare it with the `13.0.*` tags on Docker Hub before assuming the server is current. Last done 2026-11-23: 13.0.21 → 13.0.30 (issue #30).
+
+A move inside the 13.0 line is what Seafile's manual calls a maintenance upgrade: no new compose file and no `.env` change. Before touching anything:
+
+1. **Seats.** A recreate is a restart, so the [license check](#start--stop--restart) applies: active accounts must not exceed `MaxUsers`.
+2. **Templates.** For each override in `custom-templates/`, diff the upstream file inside the running container (`/opt/seafile/seafile-pro-server-<version>/seahub/seahub/templates/`) against the same file in the new image. If upstream changed, re-apply our addition before upgrading (see `custom-templates/README.md`).
+3. **Drift.** Confirm `/opt/seafile/*.yml` still match the repo and that the rendered Compose environment still matches the running container, so the recreate changes nothing but the image.
+4. **Backup.** Take a [manual database dump](#manual) and archive the live configuration and overrides (root-only: the archive holds the license key):
+
+   ```bash
+   sudo sh -c 'umask 077; tar -C /opt/seafile-data/seafile -czf /opt/backups/seafile-conf-manual-$(date +%Y%m%d%H%M%S).tar.gz conf seahub-data/custom/templates seafile-license.txt'
+   ```
+
+5. **Review.** The recreate is a production action. An assigned AI reviewer's exact-head APPROVE must cover the head that documents these steps, and `ai-task-gates check --before production --reviewer-approval <report>` must open before it runs.
+
+Then, as root from `/opt/seafile`:
+
+```bash
+# Keep the running version reachable by name for rollback
+docker tag seafileltd/seafile-pro-mc:13.0-latest seafileltd/seafile-pro-mc:13.0.21
+
+docker compose -f seafile-server.yml -f caddy.yml pull seafile
+# Must print the digest that was reviewed; a floating tag can move at any time
+docker image inspect seafileltd/seafile-pro-mc:13.0-latest --format '{{index .RepoDigests 0}}'
+
+# Recreates the seafile container only and returns once it is healthy
+docker compose -f seafile-server.yml -f caddy.yml up -d --no-deps --wait --wait-timeout 300 seafile
+```
+
+`--no-deps` leaves the database, cache and proxy containers untouched. Prove it live before closing: `server-info` shows the new version, the sign-in page loads, the four overridden screens render, `docker logs seafile` has no `users exceeds limit`, and the NAS sync container reconnects.
+
+**Rollback:** run the same `up -d --no-deps --wait seafile` with `SEAFILE_IMAGE=seafileltd/seafile-pro-mc:13.0.21` set on the command line, then [restore](#restore) the pre-upgrade dump only if the new version changed the database in a way the old one cannot read.
+
+Never use this procedure for a major version (13 → 14). That is a migration with Seafile's own upgrade notes, new configuration and its own reviewer-approved plan.
 
 ## nas-settings Panel
 
@@ -121,10 +158,12 @@ Daily cron at 3am dumps all MariaDB databases to `/opt/backups/seafile-db-YYYYMM
 
 ### Manual
 ```bash
-docker exec seafile-mysql mysqldump \
-  -u root -p$(grep INIT_SEAFILE_MYSQL_ROOT_PASSWORD /opt/seafile/.env | cut -d= -f2) \
-  --all-databases > /opt/backups/seafile-db-manual-$(date +%Y%m%d%H%M%S).sql
+# The password travels in the container's environment, never on a command line
+sudo sh -c 'umask 077; PW=$(grep ^INIT_SEAFILE_MYSQL_ROOT_PASSWORD /opt/seafile/.env | cut -d= -f2-); \
+  docker exec -e MYSQL_PWD="$PW" seafile-mysql mysqldump -u root --all-databases > /opt/backups/seafile-db-manual-$(date +%Y%m%d%H%M%S).sql'
 ```
+
+Check the last line of the dump for `Dump completed` before relying on it.
 
 ### What is NOT backed up
 File data lives in S3 — inherits Linode's durability. The SQL backup covers only metadata: accounts, sharing, library references, audit logs. Losing the SQL without a backup means losing user accounts and permissions, but file data in S3 remains intact.

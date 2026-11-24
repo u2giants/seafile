@@ -23,7 +23,7 @@ A verbatim copy of Seafile's built-in `sysadmin/sysadmin_react_app.html` with on
 
 A verbatim copy of Seafile's built-in `react_app.html` (the main workspace app) with one addition: an **admin-only** (`{% if user.is_staff %}`) MutationObserver script that appends a "NAS Sync" link to the main left sidebar (`.side-nav-con .nav-container`), pointing at `/nas-settings/`. So admins can reach the panel from the normal Seafile UI without typing the URL; non-admin designers don't see a link they can't use.
 
-Same full-copy rationale and upgrade risk as above — re-diff against `/opt/seafile/seafile-pro-server-<version>/seahub/seahub/templates/react_app.html` after a Seafile upgrade. (Current upstream baseline: 13.0.21.)
+Same full-copy rationale and upgrade risk as above — re-diff against `/opt/seafile/seafile-pro-server-<version>/seahub/seahub/templates/react_app.html` after a Seafile upgrade. (Current upstream baseline: 13.0.30 — identical to 13.0.21 for all four overrides as of 2026-11-23; see [deployment](../../docs/deployment.md#seafile-server-updates-same-130-line).)
 
 ### `sysadmin/sudo_mode.html`
 
@@ -60,5 +60,7 @@ sudo mkdir -p "$DST/registration"
 sudo cp seafile-server/custom-templates/registration/login.html          "$DST/registration/login.html"
 docker restart seafile   # ~30-90s full blip (web + sync). Validate the template first (above).
 ```
+
+All four deployed copies must stay byte-identical to this directory (`sudo cmp` each pair; `sudo_mode.html` on the VPS is root-only).
 
 To roll back a bad override: delete the file from `$DST` and `docker restart seafile` — Seahub falls back to its built-in template.
