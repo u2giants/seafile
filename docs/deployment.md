@@ -64,7 +64,9 @@ A move inside the 13.0 line is what Seafile's manual calls a maintenance upgrade
    docker pull "seafileltd/seafile-pro-mc:$NEW"
    for f in react_app.html registration/login.html sysadmin/sysadmin_react_app.html sysadmin/sudo_mode.html; do
      docker create --name seaf-tmp "seafileltd/seafile-pro-mc:$NEW" >/dev/null
-     docker cp "seaf-tmp:/opt/seafile/seafile-pro-server-$NEW/seahub/seahub/templates/$f" "$TMP/new"
+     rm -f "$TMP/new"
+     docker cp "seaf-tmp:/opt/seafile/seafile-pro-server-$NEW/seahub/seahub/templates/$f" "$TMP/new" \
+       || { docker rm seaf-tmp >/dev/null; echo "$f: COPY FAILED, not compared"; continue; }
      docker rm seaf-tmp >/dev/null
      docker exec seafile cat "/opt/seafile/seafile-pro-server-$RUNNING/seahub/seahub/templates/$f" > "$TMP/old"
      diff "$TMP/old" "$TMP/new" > /dev/null && echo "$f: upstream unchanged" || echo "$f: UPSTREAM CHANGED"
@@ -88,9 +90,10 @@ A move inside the 13.0 line is what Seafile's manual calls a maintenance upgrade
 Then, in the same shell:
 
 ```bash
-# Name the image that runs now, so it stays reachable for rollback under its own version
+# Name the image the running container was started from (by ID, never by the floating
+# tag, which a later pull can move), so it stays reachable for rollback under its own version
 RUNNING=$(docker exec seafile printenv SEAFILE_VERSION)
-docker tag seafileltd/seafile-pro-mc:13.0-latest "seafileltd/seafile-pro-mc:$RUNNING"
+docker tag "$(docker inspect -f '{{.Image}}' seafile)" "seafileltd/seafile-pro-mc:$RUNNING"
 
 docker compose -f seafile-server.yml -f caddy.yml pull seafile
 # Must print the digest named in the reviewed plan. A floating tag can move at any
@@ -103,7 +106,7 @@ docker compose -f seafile-server.yml -f caddy.yml up -d --no-deps --wait --wait-
 
 `--no-deps` leaves the database, cache and proxy containers untouched. Prove it live before closing: `server-info` shows the new version, the sign-in page loads, the four overridden screens render, `docker logs seafile` has no `users exceeds limit`, and the NAS sync container reconnects.
 
-**Rollback:** run the same `up -d --no-deps --wait seafile` with `SEAFILE_IMAGE=seafileltd/seafile-pro-mc:<the version named above>` set on the command line, then [restore](#restore) the pre-upgrade dump only if the new version changed the database in a way the old one cannot read.
+**Rollback:** if step 2 changed an override, put the archived copies back first with `tar -C / -xzf /opt/backups/seafile-conf-manual-<timestamp>.tar.gz` (the same archive restores `.env` if that changed). Then run the same `up -d --no-deps --wait seafile` with `SEAFILE_IMAGE=seafileltd/seafile-pro-mc:<the version named above>` set on the command line, and [restore](#restore) the pre-upgrade dump only if the new version changed the database in a way the old one cannot read.
 
 Never use this procedure for a major version (13 → 14). That is a migration with Seafile's own upgrade notes, new configuration and its own reviewer-approved plan.
 
@@ -182,9 +185,8 @@ Daily cron at 3am dumps all MariaDB databases to `/opt/backups/seafile-db-YYYYMM
 Run as root. The password is read inside the database container from its own environment, so it never appears in a command line.
 
 ```bash
-umask 077
-docker exec seafile-mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysqldump -u root --all-databases' \
-  > /opt/backups/seafile-db-manual-$(date +%Y%m%d%H%M%S).sql
+(umask 077; docker exec seafile-mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysqldump -u root --all-databases' \
+  > /opt/backups/seafile-db-manual-$(date +%Y%m%d%H%M%S).sql)
 ```
 
 Check the last line of the dump for `Dump completed` before relying on it.
