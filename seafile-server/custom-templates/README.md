@@ -23,7 +23,7 @@ A verbatim copy of Seafile's built-in `sysadmin/sysadmin_react_app.html` with on
 
 A verbatim copy of Seafile's built-in `react_app.html` (the main workspace app) with one addition: an **admin-only** (`{% if user.is_staff %}`) MutationObserver script that appends a "NAS Sync" link to the main left sidebar (`.side-nav-con .nav-container`), pointing at `/nas-settings/`. So admins can reach the panel from the normal Seafile UI without typing the URL; non-admin designers don't see a link they can't use.
 
-Same full-copy rationale and upgrade risk as above — re-diff against `/opt/seafile/seafile-pro-server-<version>/seahub/seahub/templates/react_app.html` before a Seafile upgrade. (Upstream baseline: 13.0.21. The 13.0.30 upstream files were compared with it on 2026-11-23 and are byte-identical for all four overrides; see [deployment](../../docs/deployment.md#seafile-server-updates-same-130-line).)
+Same full-copy rationale and upgrade risk as above — re-diff against `/opt/seafile/seafile-pro-server-<version>/seahub/seahub/templates/react_app.html` before a Seafile upgrade. (Upstream baseline: 13.0.21. The 13.0.30 upstream files were compared with it on 2026-11-23 and are byte-identical for all four overrides; the comparison snippet under [Seafile server updates](../../docs/deployment.md#seafile-server-updates-same-130-line) re-checks it.)
 
 ### `sysadmin/sudo_mode.html`
 

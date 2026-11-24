@@ -87,21 +87,23 @@ A move inside the 13.0 line is what Seafile's manual calls a maintenance upgrade
    ```
 
    If upstream changed, re-apply our addition to the new upstream file in `custom-templates/` and land it through its own pull request before going further (see `custom-templates/README.md`). Nothing is deployed in this step.
-4. **Drift.** Confirm `/opt/seafile/*.yml` still match the repo and that the rendered Compose environment still matches the running container, so the recreate changes nothing but the image.
-5. **Review.** The recreate is a production action. An assigned AI reviewer's exact-head APPROVE must cover the head that documents these steps, and `ai-task-gates check --before production --reviewer-approval <report>` must open before it runs. The reviewed plan (the tracking issue) names the target release and the image digest it saw; the check below compares against that digest.
+4. **Drift.** Confirm `/opt/seafile/*.yml` still match the repo and that the rendered Compose environment still matches the running container, so the recreate changes nothing but the image. `SEAFILE_IMAGE` in `/opt/seafile/.env` must be `seafileltd/seafile-pro-mc:13.0-latest`. A pinned version there was left by a rollback, which means an earlier upgrade was rejected; moving it again is a decision recorded on this upgrade's issue, not a side effect of this procedure.
+5. **Review.** The recreate is a production action. Before it runs, an assigned AI reviewer must APPROVE this exact head through `ai-review`, and `ai-task-gates check --before production --reviewer-approval <report>` must open. The APPROVE is only meaningful if this head and the tracking issue it names state the target release and its image digest, so the reviewer can check them; if either value changes, the review is repeated.
 
 Then, in the same shell:
 
 ```bash
+IMG=seafileltd/seafile-pro-mc:13.0-latest             # what SEAFILE_IMAGE in .env names
 # Name the image the running container was started from (by ID, never by the floating
-# tag, which a later pull can move), so it stays reachable for rollback under its own version
+# tag, which a later pull moves), so it stays reachable for rollback under its own version
 RUNNING=$(docker exec seafile printenv SEAFILE_VERSION)
-docker tag "$(docker inspect -f '{{.Image}}' seafile)" "seafileltd/seafile-pro-mc:$RUNNING"
+docker tag "$(docker inspect -f '{{.Image}}' seafile)" "${IMG%:*}:$RUNNING"
+echo "RUNNING=$RUNNING"                              # belongs on the tracking issue
 
 docker compose -f seafile-server.yml -f caddy.yml pull seafile
 # Must print the digest named in the reviewed plan. A floating tag can move at any
 # time; a different digest is a release nobody reviewed, so stop here.
-docker image inspect seafileltd/seafile-pro-mc:13.0-latest --format '{{index .RepoDigests 0}}'
+docker image inspect "$IMG" --format '{{index .RepoDigests 0}}'
 
 # Recreates the seafile container only and returns once it is healthy
 docker compose -f seafile-server.yml -f caddy.yml up -d --no-deps --wait --wait-timeout 300 seafile
@@ -109,9 +111,29 @@ docker compose -f seafile-server.yml -f caddy.yml up -d --no-deps --wait --wait-
 
 If step 3 changed an override, copy the landed file into `/opt/seafile-data/seafile/seahub-data/custom/templates/` between the digest check and the recreate. The recreate restarts Seahub, so no separate restart is needed; without that copy the new server would run with the old override.
 
+If `--wait` times out, the container keeps starting: read `docker logs seafile` before deciding anything, and run the same `up` again once it is healthy. Do not roll back on the timeout alone.
+
 `--no-deps` leaves the database, cache and proxy containers untouched. Prove it live before closing the issue: `server-info` shows the new version, the sign-in page loads, the four overridden screens render, `docker logs seafile` has no `users exceeds limit`, and the NAS sync container reconnects.
 
-**Rollback:** first put the step 2 archive back (`tar -C / -xzf /opt/backups/seafile-conf-manual-<timestamp>.tar.gz`), which restores the overrides and `.env` as they were before anything changed. Then run the same `up -d --no-deps --wait seafile` with `SEAFILE_IMAGE=seafileltd/seafile-pro-mc:$RUNNING` on the command line, where `$RUNNING` is the version that ran before the upgrade, never `$NEW`. [Restore](#restore) the pre-upgrade dump only if the new version changed the database in a way the old one cannot read.
+**Rollback:**
+
+1. Put the step 2 archive back (`tar -C / -xzf /opt/backups/seafile-conf-manual-<timestamp>.tar.gz`). That restores the overrides and `.env` as they were before anything changed.
+2. Pin the stack to the version that ran before the upgrade, so that a later `down` and `up -d` cannot bring the rejected release back through `13.0-latest`:
+
+   ```bash
+   sed -i 's#^SEAFILE_IMAGE=.*#SEAFILE_IMAGE=seafileltd/seafile-pro-mc:<that version>#' /opt/seafile/.env
+   ```
+
+   `<that version>` is the `RUNNING=` value from the block above, recorded on the upgrade issue. It is never `$NEW`.
+3. Recreate from the pinned version:
+
+   ```bash
+   docker compose -f seafile-server.yml -f caddy.yml up -d --no-deps --wait seafile
+   ```
+
+4. [Restore](#restore) the pre-upgrade dump only if the new version changed the database in a way the old one cannot read.
+
+The pin stays until the next upgrade's issue decides to move `SEAFILE_IMAGE` back to `13.0-latest` (step 4).
 
 Never use this procedure for a major version (13 → 14). That is a migration with Seafile's own upgrade notes, new configuration and its own reviewer-approved plan.
 
