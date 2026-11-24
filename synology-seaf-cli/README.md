@@ -360,5 +360,11 @@ type) and removed again, which Drive passes on as a delete (proven
 renamed-and-back too (about 16 an hour measured); the window is a few
 milliseconds.
 
+Before nudging, each new root-owned item gets its parent folder's permissions,
+as an SMB-created item would: Synology ACL inheritance (`synoacltool
+-enforce-inherit`) where the parent has an ACL, otherwise the parent's group
+and mode (files without exec bits). Without this, folders arriving through
+Seafile were root 755 and users could not add files (2026-11-19).
+
 Deploy/update: copy this file to `/volume1/docker/seaf-cli/drive-nudge.sh`
 (root:root 0755). The scheduled task points at that path.
