@@ -50,7 +50,7 @@ All containers have `restart: unless-stopped` — they come back automatically a
 
 ## Seafile Server Updates (Same 13.0 Line)
 
-`SEAFILE_IMAGE` is the floating `seafileltd/seafile-pro-mc:13.0-latest` tag and nothing on the VPS pulls it, so the server only moves when someone runs the steps below. `curl -s https://seafile.designflow.app/api2/server-info/` reports the running version; compare it with the `13.0.*` tags on Docker Hub before assuming the server is current. Each upgrade is tracked on one issue that holds the reviewed plan and the live proof (13.0.21 → 13.0.30: issue #30).
+`SEAFILE_IMAGE` is the floating `seafileltd/seafile-pro-mc:13.0-latest` tag and nothing on the VPS pulls it, so the server only moves when someone runs the steps below. `curl -s https://seafile.designflow.app/api2/server-info/` reports the running version; compare it with the `13.0.*` tags on Docker Hub before assuming the server is current. Each upgrade is tracked on one issue that holds the reviewed plan and the live proof. Last done 2026-11-23: 13.0.21 → 13.0.30 (issue #30).
 
 A move inside the 13.0 line is what Seafile's manual calls a maintenance upgrade: no new compose file and no `.env` change. Run everything below as root from `/opt/seafile`.
 
@@ -73,6 +73,7 @@ A move inside the 13.0 line is what Seafile's manual calls a maintenance upgrade
    TMP=$(mktemp -d)
    docker rm -f seaf-tmp >/dev/null 2>&1         # a container left by an interrupted run
    docker pull "seafileltd/seafile-pro-mc:$NEW"
+   docker image inspect "seafileltd/seafile-pro-mc:$NEW" --format '{{index .RepoDigests 0}}'   # this digest belongs on the tracking issue
    for f in react_app.html registration/login.html sysadmin/sysadmin_react_app.html sysadmin/sudo_mode.html; do
      docker create --name seaf-tmp "seafileltd/seafile-pro-mc:$NEW" >/dev/null
      rm -f "$TMP/new" "$TMP/old"
@@ -102,7 +103,9 @@ echo "RUNNING=$RUNNING"                              # belongs on the tracking i
 
 docker compose -f seafile-server.yml -f caddy.yml pull seafile
 # Must print the digest named in the reviewed plan. A floating tag can move at any
-# time; a different digest is a release nobody reviewed, so stop here.
+# time, and the pull has already moved the local tag: if the digest differs, first put
+# the tag back (docker tag "${IMG%:*}:$RUNNING" "$IMG") so that no later up -d starts
+# an unreviewed image, then stop.
 docker image inspect "$IMG" --format '{{index .RepoDigests 0}}'
 
 # Recreates the seafile container only and returns once it is healthy
