@@ -249,9 +249,16 @@ WebDAV is disabled. To enable: set `enabled = true` and `docker restart seafile`
 
 ## /opt/seafile-data/seafile/seahub-data/custom/templates/
 
-Seahub loads templates from this directory before its own `seahub/templates/`. The only override currently in place is `sysadmin/sysadmin_react_app.html`, which is a verbatim copy of Seafile's built-in template plus a MutationObserver script that injects a "NAS Sync Settings" link into the System Admin sidebar nav after the React bundle renders.
+Seahub loads templates from this directory before its own `seahub/templates/`. Four overrides are in place, each a full copy of Seafile's built-in template plus one focused POP Creations change (what each adds is in [`custom-templates/README.md`](../seafile-server/custom-templates/README.md)):
 
-**Maintenance note:** This template duplicates Seafile's built-in file. If Seafile is upgraded and the upstream template changes, this copy must be manually diffed and updated. The source is at `/opt/seafile/seafile-pro-server-<version>/seahub/seahub/templates/sysadmin/sysadmin_react_app.html` inside the container.
+| Override | Change |
+|---|---|
+| `registration/login.html` | The single-sign-on button renders as "Sign in with Microsoft" |
+| `sysadmin/sudo_mode.html` | Microsoft sign-in is the primary way for admins to confirm admin access |
+| `react_app.html` | Admins get a "NAS Sync" link to the nas-settings panel in the main sidebar |
+| `sysadmin/sysadmin_react_app.html` | Admins get a "NAS Sync Settings" link in the System Admin sidebar |
+
+**Maintenance note:** These templates duplicate Seafile's built-in files. If Seafile is upgraded and an upstream template changes, that copy must be re-diffed and updated before the upgrade (step 3 of [Seafile server updates](deployment.md#seafile-server-updates-same-130-line)). The sources are at `/opt/seafile/seafile-pro-server-<version>/seahub/seahub/templates/` inside the container.
 
 ---
 
