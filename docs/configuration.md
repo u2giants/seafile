@@ -249,7 +249,7 @@ WebDAV is disabled. To enable: set `enabled = true` and `docker restart seafile`
 
 ## /opt/seafile-data/seafile/seahub-data/custom/templates/
 
-Seahub loads templates from this directory before its own `seahub/templates/`. Four overrides are in place, each a full copy of Seafile's built-in template plus one POP Creations change (what each adds is in [`custom-templates/README.md`](../seafile-server/custom-templates/README.md)):
+Seahub loads templates from this directory before its own `seahub/templates/`. Four overrides are in place, each a full copy of Seafile's built-in template plus one focused POP Creations change (what each adds is in [`custom-templates/README.md`](../seafile-server/custom-templates/README.md)):
 
 | Override | Change |
 |---|---|

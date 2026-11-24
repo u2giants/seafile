@@ -52,27 +52,49 @@ All containers have `restart: unless-stopped` — they come back automatically a
 
 `SEAFILE_IMAGE` is the floating `seafileltd/seafile-pro-mc:13.0-latest` tag and nothing on the VPS pulls it, so the server only moves when someone runs the steps below. `curl -s https://seafile.designflow.app/api2/server-info/` reports the running version; compare it with the `13.0.*` tags on Docker Hub before assuming the server is current. Last done 2026-11-23: 13.0.21 → 13.0.30 (issue #30).
 
-A move inside the 13.0 line is what Seafile's manual calls a maintenance upgrade: no new compose file and no `.env` change. Before touching anything:
+A move inside the 13.0 line is what Seafile's manual calls a maintenance upgrade: no new compose file and no `.env` change. Run everything below as root from `/opt/seafile`.
 
 1. **Seats.** A recreate is a restart, so the [license check](#start--stop--restart) applies: active accounts must not exceed `MaxUsers`.
-2. **Templates.** For each override in `custom-templates/`, diff the upstream file inside the running container (`/opt/seafile/seafile-pro-server-<version>/seahub/seahub/templates/`) against the same file in the new image. If upstream changed, re-apply our addition before upgrading (see `custom-templates/README.md`).
-3. **Drift.** Confirm `/opt/seafile/*.yml` still match the repo and that the rendered Compose environment still matches the running container, so the recreate changes nothing but the image.
-4. **Backup.** Take a [manual database dump](#manual) and archive the live configuration and overrides (root-only: the archive holds the license key):
+2. **Templates.** Download the target release under its explicit version tag first: that touches no running container and does not move `13.0-latest`. Then diff each upstream file behind an override in `custom-templates/` between the running container and the new image. If upstream changed, re-apply our addition before going further (see `custom-templates/README.md`).
 
    ```bash
-   sudo sh -c 'umask 077; tar -C /opt/seafile-data/seafile -czf /opt/backups/seafile-conf-manual-$(date +%Y%m%d%H%M%S).tar.gz conf seahub-data/custom/templates seafile-license.txt'
+   NEW=13.0.30                                   # the target release
+   RUNNING=$(docker exec seafile printenv SEAFILE_VERSION)
+   TMP=$(mktemp -d)
+   docker pull "seafileltd/seafile-pro-mc:$NEW"
+   for f in react_app.html registration/login.html sysadmin/sysadmin_react_app.html sysadmin/sudo_mode.html; do
+     docker create --name seaf-tmp "seafileltd/seafile-pro-mc:$NEW" >/dev/null
+     docker cp "seaf-tmp:/opt/seafile/seafile-pro-server-$NEW/seahub/seahub/templates/$f" "$TMP/new"
+     docker rm seaf-tmp >/dev/null
+     docker exec seafile cat "/opt/seafile/seafile-pro-server-$RUNNING/seahub/seahub/templates/$f" > "$TMP/old"
+     diff "$TMP/old" "$TMP/new" > /dev/null && echo "$f: upstream unchanged" || echo "$f: UPSTREAM CHANGED"
+   done
+   rm -rf "$TMP"
    ```
 
-5. **Review.** The recreate is a production action. An assigned AI reviewer's exact-head APPROVE must cover the head that documents these steps, and `ai-task-gates check --before production --reviewer-approval <report>` must open before it runs.
+3. **Drift.** Confirm `/opt/seafile/*.yml` still match the repo and that the rendered Compose environment still matches the running container, so the recreate changes nothing but the image.
+4. **Backup.** Take a [manual database dump](#manual) and archive what Git cannot rebuild: `/opt/seafile/.env`, the live configuration, the deployed overrides and the license. The archive is root-only because it holds secrets.
 
-Then, as root from `/opt/seafile`:
+   ```bash
+   (umask 077; tar -czf /opt/backups/seafile-conf-manual-$(date +%Y%m%d%H%M%S).tar.gz -C / \
+     opt/seafile/.env \
+     opt/seafile-data/seafile/conf \
+     opt/seafile-data/seafile/seahub-data/custom/templates \
+     opt/seafile-data/seafile/seafile-license.txt)
+   ```
+
+5. **Review.** The recreate is a production action. An assigned AI reviewer's exact-head APPROVE must cover the head that documents these steps, and `ai-task-gates check --before production --reviewer-approval <report>` must open before it runs. The reviewed plan (the tracking issue) names the target release and the image digest it saw; the check below compares against that digest.
+
+Then, in the same shell:
 
 ```bash
-# Keep the running version reachable by name for rollback
-docker tag seafileltd/seafile-pro-mc:13.0-latest seafileltd/seafile-pro-mc:13.0.21
+# Name the image that runs now, so it stays reachable for rollback under its own version
+RUNNING=$(docker exec seafile printenv SEAFILE_VERSION)
+docker tag seafileltd/seafile-pro-mc:13.0-latest "seafileltd/seafile-pro-mc:$RUNNING"
 
 docker compose -f seafile-server.yml -f caddy.yml pull seafile
-# Must print the digest that was reviewed; a floating tag can move at any time
+# Must print the digest named in the reviewed plan. A floating tag can move at any
+# time; a different digest is a release nobody reviewed, so stop here.
 docker image inspect seafileltd/seafile-pro-mc:13.0-latest --format '{{index .RepoDigests 0}}'
 
 # Recreates the seafile container only and returns once it is healthy
@@ -81,7 +103,7 @@ docker compose -f seafile-server.yml -f caddy.yml up -d --no-deps --wait --wait-
 
 `--no-deps` leaves the database, cache and proxy containers untouched. Prove it live before closing: `server-info` shows the new version, the sign-in page loads, the four overridden screens render, `docker logs seafile` has no `users exceeds limit`, and the NAS sync container reconnects.
 
-**Rollback:** run the same `up -d --no-deps --wait seafile` with `SEAFILE_IMAGE=seafileltd/seafile-pro-mc:13.0.21` set on the command line, then [restore](#restore) the pre-upgrade dump only if the new version changed the database in a way the old one cannot read.
+**Rollback:** run the same `up -d --no-deps --wait seafile` with `SEAFILE_IMAGE=seafileltd/seafile-pro-mc:<the version named above>` set on the command line, then [restore](#restore) the pre-upgrade dump only if the new version changed the database in a way the old one cannot read.
 
 Never use this procedure for a major version (13 → 14). That is a migration with Seafile's own upgrade notes, new configuration and its own reviewer-approved plan.
 
@@ -157,10 +179,12 @@ When only `synology-seaf-cli/docker-compose.yml` changes (environment, volumes �
 Daily cron at 3am dumps all MariaDB databases to `/opt/backups/seafile-db-YYYYMMDD.sql`. Files older than 30 days are deleted at 4am.
 
 ### Manual
+Run as root. The password is read inside the database container from its own environment, so it never appears in a command line.
+
 ```bash
-# The password travels in the container's environment, never on a command line
-sudo sh -c 'umask 077; PW=$(grep ^INIT_SEAFILE_MYSQL_ROOT_PASSWORD /opt/seafile/.env | cut -d= -f2-); \
-  docker exec -e MYSQL_PWD="$PW" seafile-mysql mysqldump -u root --all-databases > /opt/backups/seafile-db-manual-$(date +%Y%m%d%H%M%S).sql'
+umask 077
+docker exec seafile-mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysqldump -u root --all-databases' \
+  > /opt/backups/seafile-db-manual-$(date +%Y%m%d%H%M%S).sql
 ```
 
 Check the last line of the dump for `Dump completed` before relying on it.
@@ -171,8 +195,7 @@ File data lives in S3 — inherits Linode's durability. The SQL backup covers on
 ### Restore
 ```bash
 cd /opt/seafile && docker compose -f seafile-server.yml -f caddy.yml stop seafile
-docker exec -i seafile-mysql mysql \
-  -u root -p$(grep INIT_SEAFILE_MYSQL_ROOT_PASSWORD /opt/seafile/.env | cut -d= -f2) \
+docker exec -i seafile-mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -u root' \
   < /opt/backups/seafile-db-YYYYMMDD.sql
 docker compose -f seafile-server.yml -f caddy.yml start seafile
 ```
