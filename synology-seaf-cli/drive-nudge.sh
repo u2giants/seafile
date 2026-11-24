@@ -73,6 +73,32 @@ nudge() {
   fi
 }
 
+# seaf-cli writes as root with mode 755/644 and no ACL, so SMB users could not
+# write into new folders (2026-11-19 "FRAMES TABLETOP DDS HOLLY ZULICK
+# WEDDING"). Give each new root-owned item its parent's permissions, the way an
+# SMB-created item would get them: Synology ACL inheritance where the parent
+# has an ACL, otherwise the parent's group and mode (files without exec bits).
+# `find` lists parents before children, so a whole new tree inherits top-down.
+ACLTOOL=${DRIVE_NUDGE_ACLTOOL:-/usr/syno/bin/synoacltool}
+has_acl() { "$ACLTOOL" -get "$1" 2>/dev/null | grep -q '^ACL version'; }
+inherit() {
+  q=$(dirname -- "$1")
+  if has_acl "$q"; then
+    "$ACLTOOL" -enforce-inherit "$1" >/dev/null 2>&1 || return 1
+  else
+    pm=$(stat -c %a -- "$q") || return 1
+    chgrp -h -- "$(stat -c %g -- "$q")" "$1" 2>/dev/null
+    if [ -d "$1" ]; then chmod -- "$pm" "$1"; else chmod -- "$(printf '%o' $((0$pm & 0666)))" "$1"; fi
+  fi
+  echo "$(date '+%F %T') inherit $1" >> "$STATE/log"
+}
+while IFS= read -r p; do
+  [ -e "$p" ] && [ ! -L "$p" ] || continue
+  [ "$(stat -c %U -- "$p")" = root ] || continue
+  grep -q -x -F -- "$(ct "$p")	$p" "$STATE/seen" && continue
+  inherit "$p" || echo "$(date '+%F %T') FAILED inherit $p" >> "$STATE/log"
+done < "$STATE/found"
+
 # Files first, then directories (a directory rename re-reads its subtree).
 for pass in files dirs; do
   while IFS= read -r p; do
