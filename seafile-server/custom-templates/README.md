@@ -1,5 +1,5 @@
 ---
-summary: Seahub template overrides (Microsoft login button, admin sidebar links, sudo mode) deployed to the custom templates dir; re-diff after every Seafile upgrade.
+summary: Seahub template overrides (Microsoft login button, admin sidebar links, sudo mode) deployed to the custom templates dir; re-diff before every Seafile upgrade.
 kind: living
 status: current
 read-when: changing login branding or sidebar links
