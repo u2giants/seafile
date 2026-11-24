@@ -258,7 +258,7 @@ Seahub loads templates from this directory before its own `seahub/templates/`. F
 | `react_app.html` | Admins get a "NAS Sync" link to the nas-settings panel in the main sidebar |
 | `sysadmin/sysadmin_react_app.html` | Admins get a "NAS Sync Settings" link in the System Admin sidebar |
 
-**Maintenance note:** These templates duplicate Seafile's built-in files. If Seafile is upgraded and an upstream template changes, that copy must be re-diffed and updated before the upgrade (step 2 of [Seafile server updates](deployment.md#seafile-server-updates-same-130-line)). The sources are at `/opt/seafile/seafile-pro-server-<version>/seahub/seahub/templates/` inside the container.
+**Maintenance note:** These templates duplicate Seafile's built-in files. If Seafile is upgraded and an upstream template changes, that copy must be re-diffed and updated before the upgrade (step 3 of [Seafile server updates](deployment.md#seafile-server-updates-same-130-line)). The sources are at `/opt/seafile/seafile-pro-server-<version>/seahub/seahub/templates/` inside the container.
 
 ---
 
