@@ -216,3 +216,7 @@ Seafile's OAuth flow creates internal user IDs and maps external identities sepa
 
 Do not change because:
 Renaming internal IDs casually can orphan OAuth bindings, library ownership, or profile rows.
+
+### NAS-to-server sync is capped per connection, not by the line (measured 2026-11-24)
+
+Seafile sync between `edgesynology1` and the VPS runs over the public internet (`https://seafile.designflow.app`), not Tailscale. Measured with 500 MB files: one NAS upload ~48 Mbps, four parallel NAS uploads ~160 Mbps, one server-to-NAS download ~121 Mbps. The NYC office line is symmetric fiber; the cap is per-connection throughput over the ~110 ms NYC–São Paulo path with CUBIC on the NAS sender. TCP buffers (rmem max 6 MB / wmem max 4 MB on both) are not the limit. Dead ends: the NAS kernel (DSM 4.4) has no BBR; BBR on the VPS gave no gain on the measured path and was reverted 2026-11-25; seaf-cli 1.3.2 has no transfer-thread setting (only `upload_limit`/`download_limit`); the Go fileserver ignores `worker_threads`; Caddy already streams, and HTTP/2 + HTTP/3 are on. Tailscale on the NAS was updated to 1.104.7 on 2026-11-25 and now connects directly (affects SSH/maintenance only). Open work: issue #34.
